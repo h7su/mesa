@@ -184,6 +184,7 @@ assert_memhandle_type(VkExternalMemoryHandleTypeFlags type)
 {
    switch (type) {
    case VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT:
+   case VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT:
       break;
    default:
       mesa_loge("lavapipe: unimplemented external memory type %u", type);
@@ -2066,7 +2067,7 @@ lvp_GetMemoryFdPropertiesKHR(VkDevice _device,
 
    assert(pMemoryFdProperties->sType == VK_STRUCTURE_TYPE_MEMORY_FD_PROPERTIES_KHR);
 
-   if(handleType == VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT) {
+   if (assert_memhandle_type(handleType)) {
       // There is only one memoryType so select this one
       pMemoryFdProperties->memoryTypeBits = 1;
    }
