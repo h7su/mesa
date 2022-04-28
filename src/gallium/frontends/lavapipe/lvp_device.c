@@ -153,6 +153,7 @@ static const struct vk_device_extension_table lvp_device_extensions_supported = 
    .EXT_graphics_pipeline_library         = true,
    .EXT_host_query_reset                  = true,
    .EXT_image_2d_view_of_3d               = true,
+   .EXT_image_drm_format_modifier         = true,
    .EXT_image_robustness                  = true,
    .EXT_index_type_uint8                  = true,
    .EXT_inline_uniform_block              = true,
