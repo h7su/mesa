@@ -243,6 +243,7 @@ vk_sync_as_lvp_pipe_sync(struct vk_sync *sync)
 
 struct lvp_image {
    struct vk_image vk;
+   VkDeviceSize offset;
    VkDeviceSize size;
    uint32_t alignment;
    struct pipe_memory_allocation *pmem;

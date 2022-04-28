@@ -25,6 +25,7 @@
 #include "util/format/u_format.h"
 #include "util/u_inlines.h"
 #include "pipe/p_state.h"
+#include "frontend/winsys_handle.h"
 
 static VkResult
 lvp_image_create(VkDevice _device,
@@ -116,9 +117,28 @@ lvp_image_create(VkDevice _device,
       template.last_level = pCreateInfo->mipLevels - 1;
       template.nr_samples = pCreateInfo->samples;
       template.nr_storage_samples = pCreateInfo->samples;
-      image->bo = device->pscreen->resource_create_unbacked(device->pscreen,
-                                                            &template,
-                                                            &image->size);
+      if (modinfo) {
+         struct winsys_handle whandle;
+         whandle.type = WINSYS_HANDLE_TYPE_UNBACKED;
+         whandle.layer = 0;
+         whandle.plane = 0; //TODO
+         whandle.handle = 0;
+         whandle.stride = layouts[0].rowPitch;
+         whandle.array_stride = layouts[0].arrayPitch;
+         whandle.image_stride = layouts[0].depthPitch;
+         image->offset = layouts[0].offset;
+         whandle.format = pCreateInfo->format;
+         whandle.modifier = DRM_FORMAT_MOD_LINEAR;
+         image->bo = device->pscreen->resource_from_handle(device->pscreen,
+                                                           &template,
+                                                           &whandle,
+                                                           PIPE_HANDLE_USAGE_EXPLICIT_FLUSH);
+         image->size = whandle.size;
+      } else {
+         image->bo = device->pscreen->resource_create_unbacked(device->pscreen,
+                                                               &template,
+                                                               &image->size);
+      }
       if (!image->bo)
          return vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);
    }

@@ -2034,7 +2034,7 @@ VKAPI_ATTR VkResult VKAPI_CALL lvp_BindImageMemory2(VkDevice _device,
          if (!device->pscreen->resource_bind_backing(device->pscreen,
                                                      image->bo,
                                                      mem->pmem,
-                                                     bind_info->memoryOffset)) {
+                                                     bind_info->memoryOffset + image->offset)) {
             /* This is probably caused by the texture being too large, so let's
              * report this as the *closest* allowed error-code. It's not ideal,
              * but it's unlikely that anyone will care too much.
