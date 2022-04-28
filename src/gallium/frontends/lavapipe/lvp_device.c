@@ -146,6 +146,9 @@ static const struct vk_device_extension_table lvp_device_extensions_supported = 
    .EXT_depth_clip_control                = true,
    .EXT_extended_dynamic_state            = true,
    .EXT_extended_dynamic_state2           = true,
+#ifdef PIPE_MEMORY_FD
+   .EXT_external_memory_dma_buf           = true,
+#endif
    .EXT_external_memory_host              = true,
    .EXT_graphics_pipeline_library         = true,
    .EXT_host_query_reset                  = true,
