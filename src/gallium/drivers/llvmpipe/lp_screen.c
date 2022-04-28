@@ -810,6 +810,18 @@ llvmpipe_is_format_supported( struct pipe_screen *_screen,
        format != PIPE_FORMAT_ETC1_RGB8)
       return false;
 
+   /* planar not supported natively */
+   if (format_desc->layout == UTIL_FORMAT_LAYOUT_PLANAR2 ||
+       format_desc->layout == UTIL_FORMAT_LAYOUT_PLANAR3)
+      return false;
+
+   if (format_desc->colorspace == UTIL_FORMAT_COLORSPACE_YUV) {
+      if (format == PIPE_FORMAT_UYVY ||
+          format == PIPE_FORMAT_YUYV)
+         return true;
+      return false;
+   }
+
    /*
     * Everything can be supported by u_format
     * (those without fetch_rgba_float might be not but shouldn't hit that)
