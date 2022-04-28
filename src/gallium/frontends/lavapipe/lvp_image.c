@@ -34,8 +34,28 @@ lvp_image_create(VkDevice _device,
 {
    LVP_FROM_HANDLE(lvp_device, device, _device);
    struct lvp_image *image;
+   enum pipe_format format = lvp_vk_format_to_pipe_format(pCreateInfo->format);
 
    assert(pCreateInfo->sType == VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO);
+
+   const VkImageDrmFormatModifierExplicitCreateInfoEXT *modinfo = (void*)vk_find_struct_const(pCreateInfo->pNext,
+                                                                  IMAGE_DRM_FORMAT_MODIFIER_EXPLICIT_CREATE_INFO_EXT);
+   const VkSubresourceLayout *layouts = NULL;
+   unsigned num_layouts = 1;
+
+   if (modinfo && pCreateInfo->tiling == VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT) {
+      assert(modinfo->drmFormatModifier == DRM_FORMAT_MOD_LINEAR);
+      assert(modinfo->drmFormatModifierPlaneCount == util_format_get_num_planes(format));
+      num_layouts = modinfo->drmFormatModifierPlaneCount;
+      layouts = modinfo->pPlaneLayouts;
+   }
+
+   /* planar not supported yet */
+   assert(num_layouts == 1);
+   if (num_layouts > 1) {
+      mesa_loge("lavapipe: planar drm formats are not supported");
+      return VK_ERROR_OUT_OF_DEVICE_MEMORY;
+   }
 
    image = vk_image_create(&device->vk, pCreateInfo, alloc, sizeof(*image));
    if (image == NULL)
@@ -61,7 +81,7 @@ lvp_image_create(VkDevice _device,
          break;
       }
 
-      template.format = lvp_vk_format_to_pipe_format(pCreateInfo->format);
+      template.format = format;
 
       bool is_ds = util_format_is_depth_or_stencil(template.format);
 
