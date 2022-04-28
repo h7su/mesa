@@ -257,6 +257,10 @@ VKAPI_ATTR void VKAPI_CALL lvp_GetImageSubresourceLayout(
 
    switch (pSubresource->aspectMask) {
    case VK_IMAGE_ASPECT_COLOR_BIT:
+   case VK_IMAGE_ASPECT_MEMORY_PLANE_0_BIT_EXT:
+   case VK_IMAGE_ASPECT_MEMORY_PLANE_1_BIT_EXT:
+   case VK_IMAGE_ASPECT_MEMORY_PLANE_2_BIT_EXT:
+   case VK_IMAGE_ASPECT_MEMORY_PLANE_3_BIT_EXT:
       break;
    case VK_IMAGE_ASPECT_DEPTH_BIT:
       break;
