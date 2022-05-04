@@ -81,6 +81,7 @@ struct llvmpipe_resource
     * usage.
     */
    struct sw_displaytarget *dt;
+   enum pipe_format dt_format;
 
    /**
     * Malloc'ed data for regular textures, or a mapping to dt above.
@@ -101,8 +102,13 @@ struct llvmpipe_resource
 
    uint64_t size_required;
    uint64_t backing_offset;
+#ifdef PIPE_MEMORY_FD
+   struct pipe_memory_allocation *dmabuf_alloc;
+#endif
+   int dmabuf_fd;
    bool backable;
    bool imported_memory;
+   bool dmabuf;
 #ifdef DEBUG
    struct list_head list;
 #endif
