@@ -148,10 +148,14 @@ static const struct vk_device_extension_table lvp_device_extensions_supported = 
    .EXT_depth_clip_control                = true,
    .EXT_extended_dynamic_state            = true,
    .EXT_extended_dynamic_state2           = true,
+#ifdef PIPE_MEMORY_FD
+   .EXT_external_memory_dma_buf           = true,
+#endif
    .EXT_external_memory_host              = true,
    .EXT_graphics_pipeline_library         = true,
    .EXT_host_query_reset                  = true,
    .EXT_image_2d_view_of_3d               = true,
+   .EXT_image_drm_format_modifier         = true,
    .EXT_image_robustness                  = true,
    .EXT_index_type_uint8                  = true,
    .EXT_inline_uniform_block              = true,
@@ -162,6 +166,7 @@ static const struct vk_device_extension_table lvp_device_extensions_supported = 
    .EXT_private_data                      = true,
    .EXT_primitives_generated_query        = true,
    .EXT_primitive_topology_list_restart   = true,
+   .EXT_queue_family_foreign              = true,
    .EXT_sampler_filter_minmax             = true,
    .EXT_scalar_block_layout               = true,
    .EXT_separate_stencil_usage            = true,
@@ -180,6 +185,22 @@ static const struct vk_device_extension_table lvp_device_extensions_supported = 
    .GOOGLE_decorate_string                = true,
    .GOOGLE_hlsl_functionality1            = true,
 };
+
+static bool
+assert_memhandle_type(VkExternalMemoryHandleTypeFlags types)
+{
+   unsigned valid[] = {
+      VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT,
+      VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT,
+   };
+   for (unsigned i = 0; i < ARRAY_SIZE(valid); i++) {
+      if (types & valid[i])
+         types &= ~valid[i];
+   }
+   u_foreach_bit(type, types)
+      mesa_loge("lavapipe: unimplemented external memory type %u", 1<<type);
+   return types == 0;
+}
 
 static int
 min_vertex_pipeline_param(struct pipe_screen *pscreen, enum pipe_shader_cap param)
@@ -1634,11 +1655,11 @@ VKAPI_ATTR VkResult VKAPI_CALL lvp_AllocateMemory(
          break;
       case VK_STRUCTURE_TYPE_EXPORT_MEMORY_ALLOCATE_INFO:
          export_info = (VkExportMemoryAllocateInfo*)ext;
-         assert(!export_info->handleTypes || export_info->handleTypes == VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT);
+         assert_memhandle_type(export_info->handleTypes);
          break;
       case VK_STRUCTURE_TYPE_IMPORT_MEMORY_FD_INFO_KHR:
          import_info = (VkImportMemoryFdInfoKHR*)ext;
-         assert(import_info->handleType == VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT);
+         assert_memhandle_type(import_info->handleType);
          break;
       default:
          break;
@@ -2003,7 +2024,7 @@ VKAPI_ATTR VkResult VKAPI_CALL lvp_BindImageMemory2(VkDevice _device,
          if (!device->pscreen->resource_bind_backing(device->pscreen,
                                                      image->bo,
                                                      mem->pmem,
-                                                     bind_info->memoryOffset)) {
+                                                     bind_info->memoryOffset + image->offset)) {
             /* This is probably caused by the texture being too large, so let's
              * report this as the *closest* allowed error-code. It's not ideal,
              * but it's unlikely that anyone will care too much.
@@ -2025,7 +2046,7 @@ lvp_GetMemoryFdKHR(VkDevice _device, const VkMemoryGetFdInfoKHR *pGetFdInfo, int
    LVP_FROM_HANDLE(lvp_device_memory, memory, pGetFdInfo->memory);
 
    assert(pGetFdInfo->sType == VK_STRUCTURE_TYPE_MEMORY_GET_FD_INFO_KHR);
-   assert(pGetFdInfo->handleType == VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT);
+   assert_memhandle_type(pGetFdInfo->handleType);
 
    *pFD = dup(memory->backed_fd);
    assert(*pFD >= 0);
@@ -2042,7 +2063,7 @@ lvp_GetMemoryFdPropertiesKHR(VkDevice _device,
 
    assert(pMemoryFdProperties->sType == VK_STRUCTURE_TYPE_MEMORY_FD_PROPERTIES_KHR);
 
-   if(handleType == VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT) {
+   if (assert_memhandle_type(handleType)) {
       // There is only one memoryType so select this one
       pMemoryFdProperties->memoryTypeBits = 1;
    }

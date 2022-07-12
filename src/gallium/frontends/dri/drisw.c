@@ -470,6 +470,8 @@ static __DRIimageExtension driSWImageExtension = {
     .destroyImage = dri2_destroy_image,
 };
 
+extern const __DRIimageExtension driVkImageExtension;
+
 static const __DRIrobustnessExtension dri2Robustness = {
    .base = { __DRI2_ROBUSTNESS, 1 }
 };
@@ -479,22 +481,22 @@ static const __DRIrobustnessExtension dri2Robustness = {
  */
 
 static const __DRIextension *drisw_screen_extensions[] = {
+   &driSWImageExtension.base,
    &driTexBufferExtension.base,
    &dri2RendererQueryExtension.base,
    &dri2ConfigQueryExtension.base,
    &dri2FenceExtension.base,
-   &driSWImageExtension.base,
    &dri2FlushControlExtension.base,
    NULL
 };
 
 static const __DRIextension *drisw_robust_screen_extensions[] = {
+   &driSWImageExtension.base,
    &driTexBufferExtension.base,
    &dri2RendererQueryExtension.base,
    &dri2ConfigQueryExtension.base,
    &dri2FenceExtension.base,
    &dri2Robustness.base,
-   &driSWImageExtension.base,
    &dri2FlushControlExtension.base,
    NULL
 };
@@ -560,6 +562,8 @@ drisw_init_screen(__DRIscreen * sPriv)
    }
    else
       sPriv->extensions = drisw_screen_extensions;
+   if (pscreen->resource_create_with_modifiers)
+      sPriv->extensions[0] = &driVkImageExtension.base;
    screen->lookup_egl_image = dri2_lookup_egl_image;
 
    const __DRIimageLookupExtension *image = sPriv->dri2.image;

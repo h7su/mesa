@@ -44,6 +44,10 @@
 #include "cso_cache/cso_context.h"
 #include "nir.h"
 
+#if !DETECT_OS_WINDOWS
+#include "drm-uapi/drm_fourcc.h"
+#endif
+
 /* Pre-declarations needed for WSI entrypoints */
 struct wl_surface;
 struct wl_display;
@@ -241,6 +245,7 @@ vk_sync_as_lvp_pipe_sync(struct vk_sync *sync)
 
 struct lvp_image {
    struct vk_image vk;
+   VkDeviceSize offset;
    VkDeviceSize size;
    uint32_t alignment;
    struct pipe_memory_allocation *pmem;

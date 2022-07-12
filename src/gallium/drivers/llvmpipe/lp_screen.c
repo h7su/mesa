@@ -118,6 +118,10 @@ static int
 llvmpipe_get_param(struct pipe_screen *screen, enum pipe_cap param)
 {
    switch (param) {
+#ifdef PIPE_MEMORY_FD
+   case PIPE_CAP_DMABUF:
+      return 1;
+#endif
    case PIPE_CAP_NPOT_TEXTURES:
    case PIPE_CAP_MIXED_FRAMEBUFFER_SIZES:
    case PIPE_CAP_MIXED_COLOR_DEPTH_BITS:
@@ -810,6 +814,18 @@ llvmpipe_is_format_supported( struct pipe_screen *_screen,
    if (format_desc->layout == UTIL_FORMAT_LAYOUT_ETC &&
        format != PIPE_FORMAT_ETC1_RGB8)
       return false;
+
+   /* planar not supported natively */
+   if (format_desc->layout == UTIL_FORMAT_LAYOUT_PLANAR2 ||
+       format_desc->layout == UTIL_FORMAT_LAYOUT_PLANAR3)
+      return false;
+
+   if (format_desc->colorspace == UTIL_FORMAT_COLORSPACE_YUV) {
+      if (format == PIPE_FORMAT_UYVY ||
+          format == PIPE_FORMAT_YUYV)
+         return true;
+      return false;
+   }
 
    /*
     * Everything can be supported by u_format
