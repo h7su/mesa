@@ -25,6 +25,16 @@
     <value name="SLM_ENCODES_256K" value="9" />
     <value name="SLM_ENCODES_384K" value="10" />
   </enum>
+  <enum name="STATE_SURFACE_TYPE">
+    <value name="SURFTYPE_1D" value="0" />
+    <value name="SURFTYPE_2D" value="1" />
+    <value name="SURFTYPE_3D" value="2" />
+    <value name="SURFTYPE_CUBE" value="3" />
+    <value name="SURFTYPE_BUFFER" value="4" />
+    <value name="SURFTYPE_RES5" value="5" />
+    <value name="SURFTYPE_SCRATCH" value="6" />
+    <value name="SURFTYPE_NULL" value="7" />
+  </enum>
   <enum name="UNIFIED_COMPRESSION_FORMAT">
     <value name="CMF_R8" value="0" />
     <value name="CMF_R8_G8" value="1" />
