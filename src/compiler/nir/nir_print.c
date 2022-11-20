@@ -2080,6 +2080,7 @@ static void
 print_block(nir_block *block, print_state *state, unsigned tabs)
 {
    FILE *fp = state->fp;
+   nir_shader *shader = state->shader;
 
    if (block_has_instruction_with_dest(block))
       state->padding_for_no_dest = calculate_padding_for_no_dest(state);
@@ -2107,9 +2108,29 @@ print_block(nir_block *block, print_state *state, unsigned tabs)
    print_block_preds(block, state);
    fprintf(fp, "\n");
 
+   uint32_t cur_src_loc_index = 0;
    nir_foreach_instr(instr, block) {
+      if (shader->src_locs && cur_src_loc_index != instr->src_loc_index) {
+         print_indentation(tabs, fp);
+         fprintf(fp, "/* ");
+         if (instr->src_loc_index > 0) {
+            assert(instr->src_loc_index < shader->src_loc_count);
+            nir_src_loc src_loc = shader->src_locs[instr->src_loc_index];
+            fprintf(fp, "0x%zx ", src_loc.spirv_offset);
+            if (src_loc.file != NULL) {
+               fprintf(fp, "%s:%d:%d ", src_loc.file, src_loc.line, src_loc.col);
+            }
+         } else {
+            fprintf(fp, "no source location ");
+         }
+         fprintf(fp, "*/\n");
+
+         cur_src_loc_index = instr->src_loc_index;
+      }
+
       print_instr(instr, state, tabs);
       fprintf(fp, "\n");
+
       print_annotation(state, instr);
    }
 
