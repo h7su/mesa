@@ -175,6 +175,10 @@ nir_sweep(nir_shader *nir)
 
    ralloc_steal(nir, nir->constant_data);
    ralloc_steal(nir, nir->xfb_info);
+   ralloc_steal(nir, nir->src_locs);
+   for (int i = 0; i < nir->src_loc_count; i++) {
+      ralloc_steal(nir, nir->src_locs[i].file);
+   }
    ralloc_steal(nir, nir->printf_info);
    for (int i = 0; i < nir->printf_info_count; i++) {
       ralloc_steal(nir, nir->printf_info[i].arg_sizes);
