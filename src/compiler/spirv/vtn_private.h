@@ -39,6 +39,7 @@ extern uint32_t mesa_spirv_debug;
 #define MESA_SPIRV_DEBUG(flag) unlikely(mesa_spirv_debug & (MESA_SPIRV_DEBUG_ ## flag))
 
 #define MESA_SPIRV_DEBUG_STRUCTURED     (1u << 0)
+#define MESA_SPIRV_DEBUG_SRC_LOC        (1u << 1)
 
 struct vtn_builder;
 struct vtn_decoration;
@@ -638,12 +639,11 @@ struct vtn_builder {
    struct spirv_to_nir_options *options;
    struct vtn_block *block;
 
-   /* Current offset, file, line, and column.  Useful for debugging.  Set
-    * automatically by vtn_foreach_instruction.
-    */
-   size_t spirv_offset;
-   const char *file;
-   int line, col;
+   /* Current source location. Set automatically by vtn_foreach_instruction. */
+   struct nir_src_loc src_loc;
+
+   struct util_dynarray src_locs;
+   struct hash_table *shader_sources;
 
    /*
     * Map from phi instructions (pointer to the start of the instruction)

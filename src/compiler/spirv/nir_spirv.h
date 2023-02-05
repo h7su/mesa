@@ -136,6 +136,8 @@ struct spirv_to_nir_options {
     */
    bool skip_os_break_in_debug_build;
 
+   bool gather_src_locs;
+
    /* Shader index provided by VkPipelineShaderStageNodeCreateInfoAMDX */
    uint32_t shader_index;
 };
