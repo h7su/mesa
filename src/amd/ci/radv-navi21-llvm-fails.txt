@@ -1,8 +1,4 @@
 
-dEQP-VK.spirv_assembly.instruction.compute.float_controls.fp32.input_args.tanh_denorm_flush_to_zero,Fail
-dEQP-VK.spirv_assembly.instruction.graphics.float_controls.fp32.input_args.tanh_denorm_flush_to_zero_frag,Fail
-dEQP-VK.spirv_assembly.instruction.graphics.float_controls.fp32.input_args.tanh_denorm_flush_to_zero_vert,Fail
-
 dEQP-VK.draw.renderpass.shader_invocation.helper_invocation,Fail
 
 dEQP-VK.fragment_shading_barycentric.weights.pipeline_topology_dynamic.msaa_interpolate_at_offset.triangle_fan.perspective,Fail
