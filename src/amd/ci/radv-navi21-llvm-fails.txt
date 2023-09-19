@@ -1,6 +1,4 @@
 
-dEQP-VK.draw.renderpass.shader_invocation.helper_invocation,Fail
-
 dEQP-VK.fragment_shading_barycentric.weights.pipeline_topology_dynamic.msaa_interpolate_at_offset.triangle_fan.perspective,Fail
 dEQP-VK.fragment_shading_barycentric.weights.pipeline_topology_dynamic.msaa_interpolate_at_offset.triangle_list.perspective,Fail
 dEQP-VK.fragment_shading_barycentric.weights.pipeline_topology_dynamic.msaa_interpolate_at_offset.triangle_list_with_adjacency.perspective,Fail
