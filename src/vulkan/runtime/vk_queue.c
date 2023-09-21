@@ -674,13 +674,14 @@ vk_queue_parse_cmdbufs(struct vk_queue *queue,
 
 static VkResult
 vk_queue_handle_threaded_waits(struct vk_queue *queue,
-                               const struct vulkan_submit_info *info,
+                               uint32_t wait_count,
+                               const VkSemaphoreSubmitInfo *waits,
                                struct vk_queue_submit *submit)
 {
    assert(queue->submit.mode == VK_QUEUE_SUBMIT_MODE_THREADED);
-   for (uint32_t i = 0; i < info->wait_count; i++) {
+   for (uint32_t i = 0; i < wait_count; i++) {
       VK_FROM_HANDLE(vk_semaphore, semaphore,
-                     info->waits[i].semaphore);
+                     waits[i].semaphore);
 
       if (semaphore->type != VK_SEMAPHORE_TYPE_BINARY)
          continue;
@@ -957,7 +958,7 @@ vk_queue_submit(struct vk_queue *queue,
 
    case VK_QUEUE_SUBMIT_MODE_THREADED:
       if (has_binary_permanent_semaphore_wait) {
-         result = vk_queue_handle_threaded_waits(queue, info, submit);
+         result = vk_queue_handle_threaded_waits(queue, info->wait_count, info->waits, submit);
          if (unlikely(result != VK_SUCCESS))
             goto fail;
       }
