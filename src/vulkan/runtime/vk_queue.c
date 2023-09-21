@@ -1117,6 +1117,21 @@ vk_queue_finish(struct vk_queue *queue)
    vk_object_base_finish(&queue->base);
 }
 
+static bool
+filter_pnexts(const void *pNext)
+{
+   vk_foreach_struct_const(s, pNext) {
+      switch (s->sType) {
+      /* can possibly be merged */
+      case VK_STRUCTURE_TYPE_PERFORMANCE_QUERY_SUBMIT_INFO_KHR:
+         break;
+      default:
+         return false;
+      }
+   }
+   return true;
+}
+
 static VkResult
 vk_queue_submit_flush(struct vk_queue *queue, const VkSubmitInfo2 *pSubmits, unsigned submit_count,
                       uint32_t wait_count,
@@ -1207,11 +1222,14 @@ vk_common_QueueSubmit2KHR(VkQueue _queue,
       }
    }
 
+   uint32_t prev_perf_pass_index = 0;
+   bool iterate = true;
+   bool has_perf_info = false;
+   bool has_signals = false;
+   bool needs_last = false;
+   uint32_t first = 0, last = 0;
+   uint32_t wait_count = 0, cmdbuf_count = 0;
    for (uint32_t i = 0; i < submitCount; i++) {
-      VkResult result = VK_SUCCESS;
-      uint32_t wait_count = pSubmits[i].waitSemaphoreInfoCount;
-      uint32_t cmdbuf_count = pSubmits[i].commandBufferInfoCount;
-
       /* From the Vulkan 1.2.194 spec:
       *
       *    "If the VkSubmitInfo::pNext chain does not include this structure,
@@ -1221,12 +1239,63 @@ vk_common_QueueSubmit2KHR(VkQueue _queue,
          vk_find_struct_const(pSubmits[i].pNext, PERFORMANCE_QUERY_SUBMIT_INFO_KHR);
       uint32_t perf_pass_index = perf_info ? perf_info->counterPassIndex : 0;
 
-      result = vk_queue_submit_flush(queue, &pSubmits[i], 1,
-                                     wait_count,
-                                     cmdbuf_count,
-                                     perf_pass_index, mem_sync, i == submitCount - 1 ? fence : NULL);
-      if (unlikely(result != VK_SUCCESS))
-         return result;
+      /* determine when to split the submits
+       * - split if unhandled pNext is in chain
+       * - split if perf counterPassIndex changes or is added/omitted
+       * - split if signal ordering would be disrupted
+       */
+      if (!filter_pnexts(pSubmits[i].pNext))
+         iterate = false;
+      if (i && (!!perf_info != has_perf_info || (has_perf_info && perf_pass_index != prev_perf_pass_index)))
+         iterate = false;
+      if (has_signals)
+         iterate = false;
+      if (i == submitCount - 1) {
+         /* always flush on last submit*/
+         if (iterate || !i) {
+            /* include last submit for flush if it can be included */
+            wait_count += pSubmits[i].waitSemaphoreInfoCount;
+            cmdbuf_count += pSubmits[i].commandBufferInfoCount;
+            last = i;
+         } else {
+            needs_last = true;
+         }
+         iterate = false;
+      }
+
+      if (!iterate) {
+         /* submits must split: flush pending but NOT current (unless last submit) */
+         VkResult result = vk_queue_submit_flush(queue, &pSubmits[first], last - first + 1,
+                                                 wait_count,
+                                                 cmdbuf_count,
+                                                 perf_pass_index, mem_sync, i == submitCount - 1 ? fence : NULL);
+         if (unlikely(result != VK_SUCCESS))
+            return result;
+         wait_count = 0;
+         cmdbuf_count = 0;
+         first = last = i;
+         iterate = true;
+      }
+
+      /* always keep accumulating */
+      wait_count += pSubmits[i].waitSemaphoreInfoCount;
+      cmdbuf_count += pSubmits[i].commandBufferInfoCount;
+      last = i;
+
+      has_perf_info = perf_info != NULL;
+      prev_perf_pass_index = perf_pass_index;
+      has_signals = pSubmits[i].signalSemaphoreInfoCount > 0;
+      if (needs_last) {
+         /* catch the last submit if it couldn't be merged above */
+         assert(first == last);
+         assert(first == submitCount - 1);
+         VkResult result = vk_queue_submit_flush(queue, &pSubmits[first], last - first + 1,
+                                                 wait_count,
+                                                 cmdbuf_count,
+                                                 perf_pass_index, mem_sync, i == submitCount - 1 ? fence : NULL);
+         if (unlikely(result != VK_SUCCESS))
+            return result;
+      }
    }
 
    return VK_SUCCESS;
