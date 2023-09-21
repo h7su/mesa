@@ -959,12 +959,6 @@ vk_queue_submit(struct vk_queue *queue,
       return vk_device_flush(queue->base.device);
 
    case VK_QUEUE_SUBMIT_MODE_THREADED:
-      if (has_binary_permanent_semaphore_wait) {
-         result = vk_queue_handle_threaded_waits(queue, info->wait_count, info->waits, submit);
-         if (unlikely(result != VK_SUCCESS))
-            goto fail;
-      }
-
       vk_queue_push_submit(queue, submit);
 
       if (mem_sync) {
@@ -1164,6 +1158,7 @@ vk_common_QueueSubmit2KHR(VkQueue _queue,
    }
 
    for (uint32_t i = 0; i < submitCount; i++) {
+      VkResult result = VK_SUCCESS;
       struct vulkan_submit_info info = {
          .pNext = pSubmits[i].pNext,
          .command_buffer_count = pSubmits[i].commandBufferInfoCount,
@@ -1202,7 +1197,15 @@ vk_common_QueueSubmit2KHR(VkQueue _queue,
       bool has_binary_permanent_semaphore_wait = vk_queue_parse_waits(queue->base.device, pSubmits[i].waitSemaphoreInfoCount, pSubmits[i].pWaitSemaphoreInfos, submit);
       vk_queue_parse_cmdbufs(queue, pSubmits[i].commandBufferInfoCount, pSubmits[i].pCommandBufferInfos, submit);
 
-      VkResult result = vk_queue_submit(queue, &info, submit, perf_pass_index, mem_sync, has_binary_permanent_semaphore_wait, 0, 0);
+      if (has_binary_permanent_semaphore_wait && queue->submit.mode == VK_QUEUE_SUBMIT_MODE_THREADED) {
+         result = vk_queue_handle_threaded_waits(queue, pSubmits[i].waitSemaphoreInfoCount, pSubmits[i].pWaitSemaphoreInfos, submit);
+         if (unlikely(result != VK_SUCCESS)) {
+            vk_queue_submit_destroy(queue, submit);
+            return result;
+         }
+      }
+
+      result = vk_queue_submit(queue, &info, submit, perf_pass_index, mem_sync, has_binary_permanent_semaphore_wait, 0, 0);
       if (unlikely(result != VK_SUCCESS))
          return result;
    }
@@ -1231,6 +1234,7 @@ vk_common_QueueBindSparse(VkQueue _queue,
    }
 
    for (uint32_t i = 0; i < bindInfoCount; i++) {
+      VkResult result = VK_SUCCESS;
       const VkTimelineSemaphoreSubmitInfo *timeline_info =
          vk_find_struct_const(pBindInfo[i].pNext, TIMELINE_SEMAPHORE_SUBMIT_INFO);
       const uint64_t *wait_values = NULL;
@@ -1336,11 +1340,19 @@ vk_common_QueueBindSparse(VkQueue _queue,
 
       bool has_binary_permanent_semaphore_wait = vk_queue_parse_waits(queue->base.device, pBindInfo[i].waitSemaphoreCount, wait_semaphore_infos, submit);
 
-      VkResult result = vk_queue_submit(queue, &info, submit, 0, NULL,
-                                        has_binary_permanent_semaphore_wait,
-                                        sparse_memory_bind_entries,
-                                        sparse_memory_image_bind_entries);
+      if (has_binary_permanent_semaphore_wait && queue->submit.mode == VK_QUEUE_SUBMIT_MODE_THREADED) {
+         result = vk_queue_handle_threaded_waits(queue, pBindInfo[i].waitSemaphoreCount, wait_semaphore_infos, submit);
+         if (unlikely(result != VK_SUCCESS)) {
+            vk_queue_submit_destroy(queue, submit);
+            goto fail;
+         }
+      }
 
+      result = vk_queue_submit(queue, &info, submit, 0, NULL,
+                               has_binary_permanent_semaphore_wait,
+                               sparse_memory_bind_entries,
+                               sparse_memory_image_bind_entries);
+fail:
       STACK_ARRAY_FINISH(wait_semaphore_infos);
       STACK_ARRAY_FINISH(signal_semaphore_infos);
 
