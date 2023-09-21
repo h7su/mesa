@@ -596,23 +596,14 @@ static VkResult
 vk_queue_submit(struct vk_queue *queue,
                 const struct vulkan_submit_info *info,
                 uint32_t perf_pass_index,
-                struct vk_sync *mem_sync)
+                struct vk_sync *mem_sync,
+                uint32_t sparse_memory_bind_entry_count,
+                uint32_t sparse_memory_image_bind_entry_count)
 {
    struct vk_device *device = queue->base.device;
    VkResult result;
-   uint32_t sparse_memory_bind_entry_count = 0;
-   uint32_t sparse_memory_image_bind_entry_count = 0;
    VkSparseMemoryBind *sparse_memory_bind_entries = NULL;
    VkSparseImageMemoryBind *sparse_memory_image_bind_entries = NULL;
-
-   for (uint32_t i = 0; i < info->buffer_bind_count; ++i)
-      sparse_memory_bind_entry_count += info->buffer_binds[i].bindCount;
-
-   for (uint32_t i = 0; i < info->image_opaque_bind_count; ++i)
-      sparse_memory_bind_entry_count += info->image_opaque_binds[i].bindCount;
-
-   for (uint32_t i = 0; i < info->image_bind_count; ++i)
-      sparse_memory_image_bind_entry_count += info->image_binds[i].bindCount;
 
    struct vk_queue_submit *submit =
       vk_queue_submit_alloc(queue, info->wait_count,
@@ -1181,7 +1172,7 @@ vk_common_QueueSubmit2KHR(VkQueue _queue,
          vk_find_struct_const(pSubmits[i].pNext, PERFORMANCE_QUERY_SUBMIT_INFO_KHR);
       uint32_t perf_pass_index = perf_info ? perf_info->counterPassIndex : 0;
 
-      VkResult result = vk_queue_submit(queue, &info, perf_pass_index, mem_sync);
+      VkResult result = vk_queue_submit(queue, &info, perf_pass_index, mem_sync, 0, 0);
       if (unlikely(result != VK_SUCCESS))
          return result;
    }
@@ -1283,7 +1274,21 @@ vk_common_QueueBindSparse(VkQueue _queue,
          .image_binds = pBindInfo[i].pImageBinds,
          .fence = i == bindInfoCount - 1 ? fence : NULL
       };
-      VkResult result = vk_queue_submit(queue, &info, 0, NULL);
+      uint32_t sparse_memory_bind_entry_count = 0;
+      uint32_t sparse_memory_image_bind_entry_count = 0;
+
+      for (uint32_t i = 0; i < info.buffer_bind_count; ++i)
+         sparse_memory_bind_entry_count += info.buffer_binds[i].bindCount;
+
+      for (uint32_t i = 0; i < info.image_opaque_bind_count; ++i)
+         sparse_memory_bind_entry_count += info.image_opaque_binds[i].bindCount;
+
+      for (uint32_t i = 0; i < info.image_bind_count; ++i)
+         sparse_memory_image_bind_entry_count += info.image_binds[i].bindCount;
+
+      VkResult result = vk_queue_submit(queue, &info, 0, NULL,
+                                        sparse_memory_bind_entry_count,
+                                        sparse_memory_image_bind_entry_count);
 
       STACK_ARRAY_FINISH(wait_semaphore_infos);
       STACK_ARRAY_FINISH(signal_semaphore_infos);
