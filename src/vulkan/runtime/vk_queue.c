@@ -678,6 +678,7 @@ vk_queue_submit(struct vk_queue *queue,
                 struct vk_queue_submit *submit,
                 uint32_t perf_pass_index,
                 struct vk_sync *mem_sync,
+                bool has_binary_permanent_semaphore_wait,
                 VkSparseMemoryBind *sparse_memory_bind_entries,
                 VkSparseImageMemoryBind *sparse_memory_image_bind_entries)
 {
@@ -687,8 +688,6 @@ vk_queue_submit(struct vk_queue *queue,
    uint32_t sparse_memory_image_bind_entry_count = 0;
 
    submit->perf_pass_index = perf_pass_index;
-
-   bool has_binary_permanent_semaphore_wait = vk_queue_parse_waits(device, info, submit);
 
    vk_queue_parse_cmdbufs(queue, info, submit);
 
@@ -1187,7 +1186,9 @@ vk_common_QueueSubmit2KHR(VkQueue _queue,
       if (unlikely(submit == NULL))
          return vk_error(queue, VK_ERROR_OUT_OF_HOST_MEMORY);
 
-      VkResult result = vk_queue_submit(queue, &info, submit, perf_pass_index, mem_sync, 0, 0);
+      bool has_binary_permanent_semaphore_wait = vk_queue_parse_waits(queue->base.device, &info, submit);
+
+      VkResult result = vk_queue_submit(queue, &info, submit, perf_pass_index, mem_sync, has_binary_permanent_semaphore_wait, 0, 0);
       if (unlikely(result != VK_SUCCESS))
          return result;
    }
@@ -1319,7 +1320,10 @@ vk_common_QueueBindSparse(VkQueue _queue,
       if (unlikely(submit == NULL))
          return vk_error(queue, VK_ERROR_OUT_OF_HOST_MEMORY);
 
+      bool has_binary_permanent_semaphore_wait = vk_queue_parse_waits(queue->base.device, &info, submit);
+
       VkResult result = vk_queue_submit(queue, &info, submit, 0, NULL,
+                                        has_binary_permanent_semaphore_wait,
                                         sparse_memory_bind_entries,
                                         sparse_memory_image_bind_entries);
 
