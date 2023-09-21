@@ -650,14 +650,15 @@ vk_queue_parse_waits(struct vk_device *device,
 
 static void
 vk_queue_parse_cmdbufs(struct vk_queue *queue,
-                       const struct vulkan_submit_info *info,
+                       uint32_t command_buffer_count,
+                       const VkCommandBufferSubmitInfo *command_buffers,
                        struct vk_queue_submit *submit)
 {
-   for (uint32_t i = 0; i < info->command_buffer_count; i++) {
+   for (uint32_t i = 0; i < command_buffer_count; i++) {
       VK_FROM_HANDLE(vk_command_buffer, cmd_buffer,
-                     info->command_buffers[i].commandBuffer);
-      assert(info->command_buffers[i].deviceMask == 0 ||
-             info->command_buffers[i].deviceMask == 1);
+                     command_buffers[i].commandBuffer);
+      assert(command_buffers[i].deviceMask == 0 ||
+             command_buffers[i].deviceMask == 1);
       assert(cmd_buffer->pool->queue_family_index == queue->queue_family_index);
 
       /* Some drivers don't call vk_command_buffer_begin/end() yet and, for
@@ -1199,7 +1200,7 @@ vk_common_QueueSubmit2KHR(VkQueue _queue,
          return vk_error(queue, VK_ERROR_OUT_OF_HOST_MEMORY);
 
       bool has_binary_permanent_semaphore_wait = vk_queue_parse_waits(queue->base.device, pSubmits[i].waitSemaphoreInfoCount, pSubmits[i].pWaitSemaphoreInfos, submit);
-      vk_queue_parse_cmdbufs(queue, &info, submit);
+      vk_queue_parse_cmdbufs(queue, pSubmits[i].commandBufferInfoCount, pSubmits[i].pCommandBufferInfos, submit);
 
       VkResult result = vk_queue_submit(queue, &info, submit, perf_pass_index, mem_sync, has_binary_permanent_semaphore_wait, 0, 0);
       if (unlikely(result != VK_SUCCESS))
