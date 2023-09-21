@@ -1114,6 +1114,52 @@ vk_queue_finish(struct vk_queue *queue)
    vk_object_base_finish(&queue->base);
 }
 
+static VkResult
+vk_queue_submit_flush(struct vk_queue *queue, const VkSubmitInfo2 *pSubmit,
+                      uint32_t wait_count, const VkSemaphoreSubmitInfo *wait_semaphore_infos,
+                      uint32_t cmdbuf_count, const VkCommandBufferSubmitInfo *cmdbufs,
+                      uint32_t perf_pass_index, struct vk_sync *mem_sync, struct vk_fence *fence)
+{
+   VkResult result = VK_SUCCESS;
+   struct vulkan_submit_info info = {
+      .pNext = pSubmit->pNext,
+      .signal_count = pSubmit->signalSemaphoreInfoCount,
+      .signals = pSubmit->pSignalSemaphoreInfos,
+      .fence = fence
+   };
+
+   struct vk_queue_submit *submit =
+      vk_queue_submit_alloc(queue, wait_count,
+                              cmdbuf_count,
+                              info.buffer_bind_count,
+                              info.image_opaque_bind_count,
+                              info.image_bind_count,
+                              0,
+                              0,
+                              info.signal_count +
+                              (mem_sync != NULL) + (info.fence != NULL),
+                              NULL,
+                              NULL);
+   if (unlikely(submit == NULL))
+      return vk_error(queue, VK_ERROR_OUT_OF_HOST_MEMORY);
+
+   bool has_binary_permanent_semaphore_wait = vk_queue_parse_waits(queue->base.device, wait_count, wait_semaphore_infos, submit);
+   vk_queue_parse_cmdbufs(queue, cmdbuf_count, cmdbufs, submit);
+
+   if (has_binary_permanent_semaphore_wait && queue->submit.mode == VK_QUEUE_SUBMIT_MODE_THREADED) {
+      result = vk_queue_handle_threaded_waits(queue, wait_count, wait_semaphore_infos, submit);
+      if (unlikely(result != VK_SUCCESS)) {
+         vk_queue_submit_destroy(queue, submit);
+         goto fail;
+      }
+   }
+
+   result = vk_queue_submit(queue, &info, submit, perf_pass_index, mem_sync, has_binary_permanent_semaphore_wait, 0, 0);
+fail:
+   vk_queue_submit_destroy(queue, submit);
+   return result;
+}
+
 VKAPI_ATTR VkResult VKAPI_CALL
 vk_common_QueueSubmit2KHR(VkQueue _queue,
                           uint32_t submitCount,
@@ -1157,12 +1203,6 @@ vk_common_QueueSubmit2KHR(VkQueue _queue,
       const VkSemaphoreSubmitInfo *wait_semaphore_infos = pSubmits[i].pWaitSemaphoreInfos;
       uint32_t cmdbuf_count = pSubmits[i].commandBufferInfoCount;
       const VkCommandBufferSubmitInfo *cmdbufs = pSubmits[i].pCommandBufferInfos;
-      struct vulkan_submit_info info = {
-         .pNext = pSubmits[i].pNext,
-         .signal_count = pSubmits[i].signalSemaphoreInfoCount,
-         .signals = pSubmits[i].pSignalSemaphoreInfos,
-         .fence = i == submitCount - 1 ? fence : NULL
-      };
 
       /* From the Vulkan 1.2.194 spec:
       *
@@ -1173,33 +1213,10 @@ vk_common_QueueSubmit2KHR(VkQueue _queue,
          vk_find_struct_const(pSubmits[i].pNext, PERFORMANCE_QUERY_SUBMIT_INFO_KHR);
       uint32_t perf_pass_index = perf_info ? perf_info->counterPassIndex : 0;
 
-      struct vk_queue_submit *submit =
-         vk_queue_submit_alloc(queue, wait_count,
-                               cmdbuf_count,
-                               info.buffer_bind_count,
-                               info.image_opaque_bind_count,
-                               info.image_bind_count,
-                               0,
-                               0,
-                               info.signal_count +
-                               (mem_sync != NULL) + (info.fence != NULL),
-                               NULL,
-                               NULL);
-      if (unlikely(submit == NULL))
-         return vk_error(queue, VK_ERROR_OUT_OF_HOST_MEMORY);
-
-      bool has_binary_permanent_semaphore_wait = vk_queue_parse_waits(queue->base.device, wait_count, wait_semaphore_infos, submit);
-      vk_queue_parse_cmdbufs(queue, cmdbuf_count, cmdbufs, submit);
-
-      if (has_binary_permanent_semaphore_wait && queue->submit.mode == VK_QUEUE_SUBMIT_MODE_THREADED) {
-         result = vk_queue_handle_threaded_waits(queue, wait_count, wait_semaphore_infos, submit);
-         if (unlikely(result != VK_SUCCESS)) {
-            vk_queue_submit_destroy(queue, submit);
-            return result;
-         }
-      }
-
-      result = vk_queue_submit(queue, &info, submit, perf_pass_index, mem_sync, has_binary_permanent_semaphore_wait, 0, 0);
+      result = vk_queue_submit_flush(queue, &pSubmits[i],
+                                     wait_count, wait_semaphore_infos,
+                                     cmdbuf_count, cmdbufs,
+                                     perf_pass_index, mem_sync, i == submitCount - 1 ? fence : NULL);
       if (unlikely(result != VK_SUCCESS))
          return result;
    }
