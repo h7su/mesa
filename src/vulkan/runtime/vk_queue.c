@@ -592,22 +592,11 @@ struct vulkan_submit_info {
    struct vk_fence *fence;
 };
 
-static VkResult
-vk_queue_submit(struct vk_queue *queue,
-                const struct vulkan_submit_info *info,
-                struct vk_queue_submit *submit,
-                uint32_t perf_pass_index,
-                struct vk_sync *mem_sync,
-                VkSparseMemoryBind *sparse_memory_bind_entries,
-                VkSparseImageMemoryBind *sparse_memory_image_bind_entries)
+static bool
+vk_queue_parse_waits(struct vk_device *device,
+                     const struct vulkan_submit_info *info,
+                     struct vk_queue_submit *submit)
 {
-   struct vk_device *device = queue->base.device;
-   VkResult result;
-   uint32_t sparse_memory_bind_entry_count = 0;
-   uint32_t sparse_memory_image_bind_entry_count = 0;
-
-   submit->perf_pass_index = perf_pass_index;
-
    bool has_binary_permanent_semaphore_wait = false;
    for (uint32_t i = 0; i < info->wait_count; i++) {
       VK_FROM_HANDLE(vk_semaphore, semaphore,
@@ -655,6 +644,26 @@ vk_queue_submit(struct vk_queue *queue,
          .wait_value = wait_value,
       };
    }
+   return has_binary_permanent_semaphore_wait;
+}
+
+static VkResult
+vk_queue_submit(struct vk_queue *queue,
+                const struct vulkan_submit_info *info,
+                struct vk_queue_submit *submit,
+                uint32_t perf_pass_index,
+                struct vk_sync *mem_sync,
+                VkSparseMemoryBind *sparse_memory_bind_entries,
+                VkSparseImageMemoryBind *sparse_memory_image_bind_entries)
+{
+   struct vk_device *device = queue->base.device;
+   VkResult result;
+   uint32_t sparse_memory_bind_entry_count = 0;
+   uint32_t sparse_memory_image_bind_entry_count = 0;
+
+   submit->perf_pass_index = perf_pass_index;
+
+   bool has_binary_permanent_semaphore_wait = vk_queue_parse_waits(device, info, submit);
 
    for (uint32_t i = 0; i < info->command_buffer_count; i++) {
       VK_FROM_HANDLE(vk_command_buffer, cmd_buffer,
