@@ -595,30 +595,16 @@ struct vulkan_submit_info {
 static VkResult
 vk_queue_submit(struct vk_queue *queue,
                 const struct vulkan_submit_info *info,
+                struct vk_queue_submit *submit,
                 uint32_t perf_pass_index,
                 struct vk_sync *mem_sync,
-                uint32_t sparse_memory_bind_entry_count,
-                uint32_t sparse_memory_image_bind_entry_count)
+                VkSparseMemoryBind *sparse_memory_bind_entries,
+                VkSparseImageMemoryBind *sparse_memory_image_bind_entries)
 {
    struct vk_device *device = queue->base.device;
    VkResult result;
-   VkSparseMemoryBind *sparse_memory_bind_entries = NULL;
-   VkSparseImageMemoryBind *sparse_memory_image_bind_entries = NULL;
-
-   struct vk_queue_submit *submit =
-      vk_queue_submit_alloc(queue, info->wait_count,
-                            info->command_buffer_count,
-                            info->buffer_bind_count,
-                            info->image_opaque_bind_count,
-                            info->image_bind_count,
-                            sparse_memory_bind_entry_count,
-                            sparse_memory_image_bind_entry_count,
-                            info->signal_count +
-                            (mem_sync != NULL) + (info->fence != NULL),
-                            &sparse_memory_bind_entries,
-                            &sparse_memory_image_bind_entries);
-   if (unlikely(submit == NULL))
-      return vk_error(queue, VK_ERROR_OUT_OF_HOST_MEMORY);
+   uint32_t sparse_memory_bind_entry_count = 0;
+   uint32_t sparse_memory_image_bind_entry_count = 0;
 
    submit->perf_pass_index = perf_pass_index;
 
@@ -688,9 +674,6 @@ vk_queue_submit(struct vk_queue *queue,
 
       submit->command_buffers[i] = cmd_buffer;
    }
-
-   sparse_memory_bind_entry_count = 0;
-   sparse_memory_image_bind_entry_count = 0;
 
    if (info->buffer_binds)
       typed_memcpy(submit->buffer_binds, info->buffer_binds, info->buffer_bind_count);
@@ -1172,7 +1155,22 @@ vk_common_QueueSubmit2KHR(VkQueue _queue,
          vk_find_struct_const(pSubmits[i].pNext, PERFORMANCE_QUERY_SUBMIT_INFO_KHR);
       uint32_t perf_pass_index = perf_info ? perf_info->counterPassIndex : 0;
 
-      VkResult result = vk_queue_submit(queue, &info, perf_pass_index, mem_sync, 0, 0);
+      struct vk_queue_submit *submit =
+         vk_queue_submit_alloc(queue, info.wait_count,
+                               info.command_buffer_count,
+                               info.buffer_bind_count,
+                               info.image_opaque_bind_count,
+                               info.image_bind_count,
+                               0,
+                               0,
+                               info.signal_count +
+                               (mem_sync != NULL) + (info.fence != NULL),
+                               NULL,
+                               NULL);
+      if (unlikely(submit == NULL))
+         return vk_error(queue, VK_ERROR_OUT_OF_HOST_MEMORY);
+
+      VkResult result = vk_queue_submit(queue, &info, submit, perf_pass_index, mem_sync, 0, 0);
       if (unlikely(result != VK_SUCCESS))
          return result;
    }
@@ -1286,9 +1284,27 @@ vk_common_QueueBindSparse(VkQueue _queue,
       for (uint32_t i = 0; i < info.image_bind_count; ++i)
          sparse_memory_image_bind_entry_count += info.image_binds[i].bindCount;
 
-      VkResult result = vk_queue_submit(queue, &info, 0, NULL,
-                                        sparse_memory_bind_entry_count,
-                                        sparse_memory_image_bind_entry_count);
+      VkSparseMemoryBind *sparse_memory_bind_entries = NULL;
+      VkSparseImageMemoryBind *sparse_memory_image_bind_entries = NULL;
+
+      struct vk_queue_submit *submit =
+         vk_queue_submit_alloc(queue, info.wait_count,
+                               info.command_buffer_count,
+                               info.buffer_bind_count,
+                               info.image_opaque_bind_count,
+                               info.image_bind_count,
+                               sparse_memory_bind_entry_count,
+                               sparse_memory_image_bind_entry_count,
+                               info.signal_count +
+                               (info.fence != NULL),
+                               &sparse_memory_bind_entries,
+                               &sparse_memory_image_bind_entries);
+      if (unlikely(submit == NULL))
+         return vk_error(queue, VK_ERROR_OUT_OF_HOST_MEMORY);
+
+      VkResult result = vk_queue_submit(queue, &info, submit, 0, NULL,
+                                        sparse_memory_bind_entries,
+                                        sparse_memory_image_bind_entries);
 
       STACK_ARRAY_FINISH(wait_semaphore_infos);
       STACK_ARRAY_FINISH(signal_semaphore_infos);
