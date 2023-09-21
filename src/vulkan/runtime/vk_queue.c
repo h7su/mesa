@@ -594,7 +594,8 @@ struct vulkan_submit_info {
 
 static VkResult
 vk_queue_submit(struct vk_queue *queue,
-                const struct vulkan_submit_info *info)
+                const struct vulkan_submit_info *info,
+                uint32_t perf_pass_index)
 {
    struct vk_device *device = queue->base.device;
    VkResult result;
@@ -633,14 +634,7 @@ vk_queue_submit(struct vk_queue *queue,
    if (unlikely(submit == NULL))
       return vk_error(queue, VK_ERROR_OUT_OF_HOST_MEMORY);
 
-   /* From the Vulkan 1.2.194 spec:
-    *
-    *    "If the VkSubmitInfo::pNext chain does not include this structure,
-    *    the batch defaults to use counter pass index 0."
-    */
-   const VkPerformanceQuerySubmitInfoKHR *perf_info =
-      vk_find_struct_const(info->pNext, PERFORMANCE_QUERY_SUBMIT_INFO_KHR);
-   submit->perf_pass_index = perf_info ? perf_info->counterPassIndex : 0;
+   submit->perf_pass_index = perf_pass_index;
 
    bool has_binary_permanent_semaphore_wait = false;
    for (uint32_t i = 0; i < info->wait_count; i++) {
@@ -1172,7 +1166,17 @@ vk_common_QueueSubmit2KHR(VkQueue _queue,
          .signals = pSubmits[i].pSignalSemaphoreInfos,
          .fence = i == submitCount - 1 ? fence : NULL
       };
-      VkResult result = vk_queue_submit(queue, &info);
+
+      /* From the Vulkan 1.2.194 spec:
+      *
+      *    "If the VkSubmitInfo::pNext chain does not include this structure,
+      *    the batch defaults to use counter pass index 0."
+      */
+      const VkPerformanceQuerySubmitInfoKHR *perf_info =
+         vk_find_struct_const(pSubmits[i].pNext, PERFORMANCE_QUERY_SUBMIT_INFO_KHR);
+      uint32_t perf_pass_index = perf_info ? perf_info->counterPassIndex : 0;
+
+      VkResult result = vk_queue_submit(queue, &info, perf_pass_index);
       if (unlikely(result != VK_SUCCESS))
          return result;
    }
@@ -1274,7 +1278,7 @@ vk_common_QueueBindSparse(VkQueue _queue,
          .image_binds = pBindInfo[i].pImageBinds,
          .fence = i == bindInfoCount - 1 ? fence : NULL
       };
-      VkResult result = vk_queue_submit(queue, &info);
+      VkResult result = vk_queue_submit(queue, &info, 0);
 
       STACK_ARRAY_FINISH(wait_semaphore_infos);
       STACK_ARRAY_FINISH(signal_semaphore_infos);
