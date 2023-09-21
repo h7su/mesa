@@ -689,8 +689,6 @@ vk_queue_submit(struct vk_queue *queue,
 
    submit->perf_pass_index = perf_pass_index;
 
-   vk_queue_parse_cmdbufs(queue, info, submit);
-
    if (info->buffer_binds)
       typed_memcpy(submit->buffer_binds, info->buffer_binds, info->buffer_bind_count);
 
@@ -1187,6 +1185,7 @@ vk_common_QueueSubmit2KHR(VkQueue _queue,
          return vk_error(queue, VK_ERROR_OUT_OF_HOST_MEMORY);
 
       bool has_binary_permanent_semaphore_wait = vk_queue_parse_waits(queue->base.device, &info, submit);
+      vk_queue_parse_cmdbufs(queue, &info, submit);
 
       VkResult result = vk_queue_submit(queue, &info, submit, perf_pass_index, mem_sync, has_binary_permanent_semaphore_wait, 0, 0);
       if (unlikely(result != VK_SUCCESS))
