@@ -594,13 +594,14 @@ struct vulkan_submit_info {
 
 static bool
 vk_queue_parse_waits(struct vk_device *device,
-                     const struct vulkan_submit_info *info,
+                     uint32_t wait_count,
+                     const VkSemaphoreSubmitInfo *waits,
                      struct vk_queue_submit *submit)
 {
    bool has_binary_permanent_semaphore_wait = false;
-   for (uint32_t i = 0; i < info->wait_count; i++) {
+   for (uint32_t i = 0; i < wait_count; i++) {
       VK_FROM_HANDLE(vk_semaphore, semaphore,
-                     info->waits[i].semaphore);
+                     waits[i].semaphore);
 
       /* From the Vulkan 1.2.194 spec:
        *
@@ -636,11 +637,11 @@ vk_queue_parse_waits(struct vk_device *device,
       }
 
       uint64_t wait_value = semaphore->type == VK_SEMAPHORE_TYPE_TIMELINE ?
-                            info->waits[i].value : 0;
+                            waits[i].value : 0;
 
       submit->waits[i] = (struct vk_sync_wait) {
          .sync = sync,
-         .stage_mask = info->waits[i].stageMask,
+         .stage_mask = waits[i].stageMask,
          .wait_value = wait_value,
       };
    }
@@ -1197,7 +1198,7 @@ vk_common_QueueSubmit2KHR(VkQueue _queue,
       if (unlikely(submit == NULL))
          return vk_error(queue, VK_ERROR_OUT_OF_HOST_MEMORY);
 
-      bool has_binary_permanent_semaphore_wait = vk_queue_parse_waits(queue->base.device, &info, submit);
+      bool has_binary_permanent_semaphore_wait = vk_queue_parse_waits(queue->base.device, pSubmits[i].waitSemaphoreInfoCount, pSubmits[i].pWaitSemaphoreInfos, submit);
       vk_queue_parse_cmdbufs(queue, &info, submit);
 
       VkResult result = vk_queue_submit(queue, &info, submit, perf_pass_index, mem_sync, has_binary_permanent_semaphore_wait, 0, 0);
@@ -1332,7 +1333,7 @@ vk_common_QueueBindSparse(VkQueue _queue,
       if (unlikely(submit == NULL))
          return vk_error(queue, VK_ERROR_OUT_OF_HOST_MEMORY);
 
-      bool has_binary_permanent_semaphore_wait = vk_queue_parse_waits(queue->base.device, &info, submit);
+      bool has_binary_permanent_semaphore_wait = vk_queue_parse_waits(queue->base.device, pBindInfo[i].waitSemaphoreCount, wait_semaphore_infos, submit);
 
       VkResult result = vk_queue_submit(queue, &info, submit, 0, NULL,
                                         has_binary_permanent_semaphore_wait,
