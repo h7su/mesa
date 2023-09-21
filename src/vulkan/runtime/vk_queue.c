@@ -595,7 +595,8 @@ struct vulkan_submit_info {
 static VkResult
 vk_queue_submit(struct vk_queue *queue,
                 const struct vulkan_submit_info *info,
-                uint32_t perf_pass_index)
+                uint32_t perf_pass_index,
+                struct vk_sync *mem_sync)
 {
    struct vk_device *device = queue->base.device;
    VkResult result;
@@ -613,12 +614,6 @@ vk_queue_submit(struct vk_queue *queue,
    for (uint32_t i = 0; i < info->image_bind_count; ++i)
       sparse_memory_image_bind_entry_count += info->image_binds[i].bindCount;
 
-   const struct wsi_memory_signal_submit_info *mem_signal =
-      vk_find_struct_const(info->pNext, WSI_MEMORY_SIGNAL_SUBMIT_INFO_MESA);
-   bool signal_mem_sync = mem_signal != NULL &&
-                          mem_signal->memory != VK_NULL_HANDLE &&
-                          queue->base.device->create_sync_for_memory != NULL;
-
    struct vk_queue_submit *submit =
       vk_queue_submit_alloc(queue, info->wait_count,
                             info->command_buffer_count,
@@ -628,7 +623,7 @@ vk_queue_submit(struct vk_queue *queue,
                             sparse_memory_bind_entry_count,
                             sparse_memory_image_bind_entry_count,
                             info->signal_count +
-                            signal_mem_sync + (info->fence != NULL),
+                            (mem_sync != NULL) + (info->fence != NULL),
                             &sparse_memory_bind_entries,
                             &sparse_memory_image_bind_entries);
    if (unlikely(submit == NULL))
@@ -792,14 +787,7 @@ vk_queue_submit(struct vk_queue *queue,
    }
 
    uint32_t signal_count = info->signal_count;
-   if (signal_mem_sync) {
-      struct vk_sync *mem_sync;
-      result = queue->base.device->create_sync_for_memory(queue->base.device,
-                                                          mem_signal->memory,
-                                                          true, &mem_sync);
-      if (unlikely(result != VK_SUCCESS))
-         goto fail;
-
+   if (mem_sync) {
       submit->_mem_signal_temp = mem_sync;
 
       assert(submit->signals[signal_count].sync == NULL);
@@ -976,7 +964,7 @@ vk_queue_submit(struct vk_queue *queue,
 
       vk_queue_push_submit(queue, submit);
 
-      if (signal_mem_sync) {
+      if (mem_sync) {
          /* If we're signaling a memory object, we have to ensure that
           * vkQueueSubmit does not return until the kernel submission has
           * happened.  Otherwise, we may get a race between this process
@@ -1155,6 +1143,23 @@ vk_common_QueueSubmit2KHR(VkQueue _queue,
       }
    }
 
+   /* WSI signal info comes from WSI, which does 1 submit */
+   struct vk_sync *mem_sync = NULL;
+   if (submitCount == 1) {
+      const struct wsi_memory_signal_submit_info *mem_signal =
+         vk_find_struct_const(pSubmits->pNext, WSI_MEMORY_SIGNAL_SUBMIT_INFO_MESA);
+      bool signal_mem_sync = mem_signal != NULL &&
+                             mem_signal->memory != VK_NULL_HANDLE &&
+                             queue->base.device->create_sync_for_memory != NULL;
+      if (signal_mem_sync) {
+         VkResult result = queue->base.device->create_sync_for_memory(queue->base.device,
+                                                                      mem_signal->memory,
+                                                                      true, &mem_sync);
+         if (unlikely(result != VK_SUCCESS))
+            return result;
+      }
+   }
+
    for (uint32_t i = 0; i < submitCount; i++) {
       struct vulkan_submit_info info = {
          .pNext = pSubmits[i].pNext,
@@ -1176,7 +1181,7 @@ vk_common_QueueSubmit2KHR(VkQueue _queue,
          vk_find_struct_const(pSubmits[i].pNext, PERFORMANCE_QUERY_SUBMIT_INFO_KHR);
       uint32_t perf_pass_index = perf_info ? perf_info->counterPassIndex : 0;
 
-      VkResult result = vk_queue_submit(queue, &info, perf_pass_index);
+      VkResult result = vk_queue_submit(queue, &info, perf_pass_index, mem_sync);
       if (unlikely(result != VK_SUCCESS))
          return result;
    }
@@ -1278,7 +1283,7 @@ vk_common_QueueBindSparse(VkQueue _queue,
          .image_binds = pBindInfo[i].pImageBinds,
          .fence = i == bindInfoCount - 1 ? fence : NULL
       };
-      VkResult result = vk_queue_submit(queue, &info, 0);
+      VkResult result = vk_queue_submit(queue, &info, 0, NULL);
 
       STACK_ARRAY_FINISH(wait_semaphore_infos);
       STACK_ARRAY_FINISH(signal_semaphore_infos);
