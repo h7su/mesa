@@ -319,6 +319,12 @@ init_context(isel_context* ctx, nir_shader* shader)
                   type = RegType::vgpr;
 
                switch (alu_instr->op) {
+               case nir_op_fddx:
+               case nir_op_fddy:
+               case nir_op_fddx_fine:
+               case nir_op_fddy_fine:
+               case nir_op_fddx_coarse:
+               case nir_op_fddy_coarse:
                case nir_op_f2i16:
                case nir_op_f2u16:
                case nir_op_f2i32:
@@ -348,12 +354,6 @@ init_context(isel_context* ctx, nir_shader* shader)
                case nir_op_pack_snorm_2x16:
                case nir_op_pack_uint_2x16:
                case nir_op_pack_sint_2x16:
-               case nir_op_fddx:
-               case nir_op_fddy:
-               case nir_op_fddx_fine:
-               case nir_op_fddy_fine:
-               case nir_op_fddx_coarse:
-               case nir_op_fddy_coarse:
                case nir_op_fquantize2f16:
                case nir_op_ldexp:
                case nir_op_frexp_sig:
