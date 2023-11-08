@@ -33,6 +33,7 @@ variables:
    ALPINE_X86_64_LAVA_SSH_TAG: "20240401-wlproto"
    FEDORA_X86_64_BUILD_TAG: "20240503-mold"
    KERNEL_TAG: "v6.6.21-mesa-f8ea"
+   KERNEL_ROOTFS_TAG: "20240514-fluster"
    KERNEL_REPO: "gfx-ci/linux"
    PKG_REPO_REV: "3cc12a2a"
 

@@ -169,6 +169,7 @@ PKG_CI=(
   initramfs-tools jq netcat-openbsd dropbear openssh-server
   libasan8
   git
+  gstreamer1.0-plugins-bad gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-ugly gstreamer1.0-tools gstreamer1.0-vaapi libgstreamer1.0-0
   python3-dev python3-pip python3-setuptools python3-wheel
   weston # Wayland
   xinit xserver-xorg-core xwayland # X11
@@ -180,6 +181,7 @@ PKG_MESA_DEP=(
 )
 PKG_DEP=(
   libpng16-16
+  libva-wayland2
   libwaffle-1-0
   libpython3.11 python3 python3-lxml python3-mako python3-numpy python3-packaging python3-pil python3-renderdoc python3-requests python3-simplejson python3-yaml # Python
   sntp
@@ -318,6 +320,12 @@ section_start kdl "Prepare a venv for kdl"
 . .gitlab-ci/container/build-kdl.sh
 mv ci-kdl.venv $ROOTFS
 section_end kdl
+
+############### Install fluster
+git clone --depth=1 https://github.com/fluendo/fluster.git
+fluster/fluster.py download
+
+mv fluster $ROOTFS/opt/
 
 ############### Build local stuff for use by igt and kernel testing, which
 ############### will reuse most of our container build process from a specific
