@@ -641,7 +641,9 @@ virtio_bo_init(struct tu_device *dev,
        *
        * MSM already does this automatically for uncached (MSM_BO_WC) memory.
        */
-      tu_sync_cache_bo(dev, bo, 0, VK_WHOLE_SIZE, TU_MEM_SYNC_CACHE_TO_GPU);
+      tu_sync_cache_bo(dev, bo, 0, bo->size, TU_MEM_SYNC_CACHE_TO_GPU);
+
+      bo->cached_non_coherent = true;
    }
 
    return result;
@@ -1227,6 +1229,7 @@ static const struct tu_knl virtio_knl_funcs = {
       .bo_finish = tu_drm_bo_finish,
       .device_wait_u_trace = virtio_device_wait_u_trace,
       .queue_submit = virtio_queue_submit,
+      .sync_cache_bos = msm_sync_cache_bos,
 };
 
 VkResult
