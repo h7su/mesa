@@ -358,6 +358,11 @@ ubwc_possible(struct tu_device *device,
        vk_format_is_depth_or_stencil(format))
       return false;
 
+   /* We don't support compressing or decompressing on the CPU */
+   if ((usage | stencil_usage) & VK_IMAGE_USAGE_HOST_TRANSFER_BIT_EXT) {
+      return false;
+   }
+
    /* Disable UBWC for D24S8 on A630 in some cases
     *
     * VK_IMAGE_ASPECT_STENCIL_BIT image view requires to be able to sample
@@ -866,6 +871,12 @@ tu_get_image_subresource_layout(struct tu_image *image,
       fdl_layer_stride(layout, pSubresource->imageSubresource.mipLevel);
    pLayout->subresourceLayout.depthPitch = slice->size0;
    pLayout->subresourceLayout.size = slice->size0 * layout->depth0;
+
+   VkSubresourceHostMemcpySizeEXT *memcpy_size =
+      vk_find_struct(pLayout, SUBRESOURCE_HOST_MEMCPY_SIZE_EXT);
+   if (memcpy_size) {
+      memcpy_size->size = slice->size0;
+   }
 
    if (fdl_ubwc_enabled(layout, pSubresource->imageSubresource.mipLevel)) {
       /* UBWC starts at offset 0 */
