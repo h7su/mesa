@@ -686,6 +686,13 @@ tu_physical_device_init(struct tu_physical_device *device,
       device->memory.type_count++;
    }
 
+   /* Provide a fallback highest_bank_bit if the kernel doesn't support
+    * providing it. This should match what the kernel programs.
+    */
+   if (!device->highest_bank_bit) {
+      device->highest_bank_bit = info.highest_bank_bit;
+   }
+
    fd_get_driver_uuid(device->driver_uuid);
    fd_get_device_uuid(device->device_uuid, &device->dev_id);
 

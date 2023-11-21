@@ -1398,6 +1398,11 @@ tu_knl_kgsl_load(struct tu_instance *instance, int fd)
    if (get_kgsl_prop(fd, KGSL_PROP_UCHE_GMEM_VADDR, &gmem_iova, sizeof(gmem_iova)))
       goto fail;
 
+   uint32_t highest_bank_bit;
+   if (get_kgsl_prop(fd, KGSL_PROP_HIGHEST_BANK_BIT, &highest_bank_bit,
+                     sizeof(highest_bank_bit)))
+      goto fail;
+
    /* kgsl version check? */
 
    device->instance = instance;
@@ -1429,6 +1434,8 @@ tu_knl_kgsl_load(struct tu_instance *instance, int fd)
       fd, KGSL_MEMFLAGS_IOCOHERENT |
              (KGSL_CACHEMODE_WRITEBACK << KGSL_CACHEMODE_SHIFT));
    device->has_cached_non_coherent_memory = true;
+
+   device->highest_bank_bit = highest_bank_bit;
 
    instance->knl = &kgsl_knl_funcs;
 
