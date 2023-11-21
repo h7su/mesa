@@ -118,7 +118,8 @@ class GPUInfo(Struct):
     def __init__(self, chip, gmem_align_w, gmem_align_h,
                  tile_align_w, tile_align_h,
                  tile_max_w, tile_max_h, num_vsc_pipes,
-                 cs_shared_mem_size, num_sp_cores, wave_granularity, fibers_per_sp):
+                 cs_shared_mem_size, num_sp_cores, wave_granularity, fibers_per_sp,
+                 highest_bank_bit = 0):
         self.chip          = chip.value
         self.gmem_align_w  = gmem_align_w
         self.gmem_align_h  = gmem_align_h
@@ -131,6 +132,7 @@ class GPUInfo(Struct):
         self.num_sp_cores  = num_sp_cores
         self.wave_granularity = wave_granularity
         self.fibers_per_sp = fibers_per_sp
+        self.highest_bank_bit = highest_bank_bit
 
         s.gpu_infos.append(self)
 
@@ -143,7 +145,7 @@ class A6xxGPUInfo(GPUInfo):
     def __init__(self, chip, template, num_ccu,
                  tile_align_w, tile_align_h, num_vsc_pipes,
                  cs_shared_mem_size, wave_granularity, fibers_per_sp,
-                 magic_regs, raw_magic_regs = None):
+                 magic_regs, raw_magic_regs = None, highest_bank_bit = 15):
         super().__init__(chip, gmem_align_w = 16, gmem_align_h = 4,
                          tile_align_w = tile_align_w,
                          tile_align_h = tile_align_h,
@@ -153,7 +155,8 @@ class A6xxGPUInfo(GPUInfo):
                          cs_shared_mem_size = cs_shared_mem_size,
                          num_sp_cores = num_ccu, # The # of SP cores seems to always match # of CCU
                          wave_granularity   = wave_granularity,
-                         fibers_per_sp      = fibers_per_sp)
+                         fibers_per_sp      = fibers_per_sp,
+                         highest_bank_bit = highest_bank_bit)
 
         self.num_ccu = num_ccu
 
@@ -248,6 +251,7 @@ add_gpus([
         num_sp_cores = 1,
         wave_granularity = 2,
         fibers_per_sp = 64 * 16, # Lowest number that didn't fault on spillall fs-varying-array-mat4-col-row-rd.
+        highest_bank_bit = 14,
     ))
 
 add_gpus([
@@ -264,6 +268,7 @@ add_gpus([
         num_sp_cores = 2,
         wave_granularity = 2,
         fibers_per_sp = 64 * 16, # Lowest number that didn't fault on spillall fs-varying-array-mat4-col-row-rd.
+        highest_bank_bit = 14,
     ))
 
 add_gpus([
@@ -280,6 +285,7 @@ add_gpus([
         num_sp_cores = 4,
         wave_granularity = 2,
         fibers_per_sp = 64 * 16, # Lowest number that didn't fault on spillall fs-varying-array-mat4-col-row-rd.
+        highest_bank_bit = 15,
     ))
 
 
@@ -599,6 +605,7 @@ add_gpus([
         cs_shared_mem_size = 32 * 1024,
         wave_granularity = 2,
         fibers_per_sp = 128 * 2 * 16,
+        highest_bank_bit = 16,
         magic_regs = dict(
             PC_POWER_CNTL = 2,
             # this seems to be a chicken bit that fixes cubic filtering:
@@ -634,6 +641,7 @@ add_gpus([
         cs_shared_mem_size = 32 * 1024,
         wave_granularity = 2,
         fibers_per_sp = 128 * 2 * 16,
+        highest_bank_bit = 14,
         magic_regs = dict(
             PC_POWER_CNTL = 1,
             TPL1_DBG_ECO_CNTL = 0x05008000,
@@ -663,6 +671,7 @@ add_gpus([
         cs_shared_mem_size = 32 * 1024,
         wave_granularity = 2,
         fibers_per_sp = 128 * 2 * 16,
+        highest_bank_bit = 16,
         magic_regs = dict(
             PC_POWER_CNTL = 2,
             TPL1_DBG_ECO_CNTL = 0x05008000,
@@ -722,6 +731,7 @@ add_gpus([
         cs_shared_mem_size = 32 * 1024,
         wave_granularity = 2,
         fibers_per_sp = 128 * 2 * 16,
+        highest_bank_bit = 16,
         magic_regs = dict(
             PC_POWER_CNTL = 7,
             TPL1_DBG_ECO_CNTL = 0x04c00000,
@@ -843,6 +853,7 @@ add_gpus([
         cs_shared_mem_size = 32 * 1024,
         wave_granularity = 2,
         fibers_per_sp = 128 * 2 * 16,
+        highest_bank_bit = 16,
         magic_regs = a730_magic_regs,
         raw_magic_regs = a730_raw_magic_regs,
     ))
@@ -878,6 +889,7 @@ add_gpus([
         cs_shared_mem_size = 32 * 1024,
         wave_granularity = 2,
         fibers_per_sp = 128 * 2 * 16,
+        highest_bank_bit = 16,
         magic_regs = dict(
             # PC_POWER_CNTL = 7,
             TPL1_DBG_ECO_CNTL = 0x11100000,
