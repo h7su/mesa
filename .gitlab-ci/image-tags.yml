@@ -37,6 +37,9 @@ variables:
    KERNEL_REPO: "gfx-ci/linux"
    PKG_REPO_REV: "3cc12a2a"
 
+   FLUSTER_REVISION: "d9106f5"
+   FLUSTER_VECTORS_VERSION: "1"
+
    WINDOWS_X64_MSVC_PATH: "windows/x86_64_msvc"
    WINDOWS_X64_MSVC_TAG: "20231222-msvc"
 
