@@ -285,6 +285,7 @@ if [[ "$DEBIAN_ARCH" = "amd64" ]]; then
 fi
 
 ############### Build dEQP runner
+export DEQP_RUNNER_GIT_REV=6c94906bb91e243ef57ae0d30133bb2b349100eb
 . .gitlab-ci/container/build-deqp-runner.sh
 mkdir -p $ROOTFS/usr/bin
 mv /usr/local/bin/*-runner $ROOTFS/usr/bin/.
