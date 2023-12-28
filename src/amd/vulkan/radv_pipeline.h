@@ -99,7 +99,7 @@ bool radv_mem_vectorize_callback(unsigned align_mul, unsigned align_offset, unsi
                                  nir_intrinsic_instr *low, nir_intrinsic_instr *high, void *data);
 
 void radv_postprocess_nir(struct radv_device *device, const struct radv_graphics_state_key *gfx_state,
-                          struct radv_shader_stage *stage);
+                          struct radv_shader_stage *stage, bool line_smooth_enabled);
 
 bool radv_shader_should_clear_lds(const struct radv_device *device, const nir_shader *shader);
 
