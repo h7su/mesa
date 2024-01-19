@@ -7704,14 +7704,16 @@ fs_nir_emit_surface_atomic(nir_to_brw_state &ntb, const fs_builder &bld,
    }
    srcs[SURFACE_LOGICAL_SRC_DATA] = data;
 
+   fs_inst *inst;
    /* Emit the actual atomic operation */
-
    switch (instr->def.bit_size) {
       case 16: {
          fs_reg dest32 = bld.vgrf(BRW_TYPE_UD);
-         bld.emit(SHADER_OPCODE_UNTYPED_ATOMIC_LOGICAL,
-                  retype(dest32, dest.type),
-                  srcs, SURFACE_LOGICAL_NUM_SRCS);
+         inst = bld.emit(SHADER_OPCODE_UNTYPED_ATOMIC_LOGICAL,
+                         retype(dest32, dest.type),
+                         srcs, SURFACE_LOGICAL_NUM_SRCS);
+         inst->size_written = instr->def.num_components *
+                              dest32.component_size(inst->exec_size);
          bld.MOV(retype(dest, BRW_TYPE_UW),
                  retype(dest32, BRW_TYPE_UD));
          break;
@@ -7719,8 +7721,10 @@ fs_nir_emit_surface_atomic(nir_to_brw_state &ntb, const fs_builder &bld,
 
       case 32:
       case 64:
-         bld.emit(SHADER_OPCODE_UNTYPED_ATOMIC_LOGICAL,
-                  dest, srcs, SURFACE_LOGICAL_NUM_SRCS);
+         inst = bld.emit(SHADER_OPCODE_UNTYPED_ATOMIC_LOGICAL,
+                         dest, srcs, SURFACE_LOGICAL_NUM_SRCS);
+         inst->size_written = instr->def.num_components *
+                              dest.component_size(inst->exec_size);
          break;
       default:
          unreachable("Unsupported bit size");
