@@ -7735,6 +7735,7 @@ static void
 fs_nir_emit_global_atomic(nir_to_brw_state &ntb, const fs_builder &bld,
                           nir_intrinsic_instr *instr)
 {
+   const intel_device_info *devinfo = ntb.devinfo;
    enum lsc_opcode op = lsc_aop_for_nir_intrinsic(instr);
    int num_data = lsc_op_num_data_values(op);
 
@@ -7762,19 +7763,24 @@ fs_nir_emit_global_atomic(nir_to_brw_state &ntb, const fs_builder &bld,
    srcs[A64_LOGICAL_ARG] = brw_imm_ud(op);
    srcs[A64_LOGICAL_ENABLE_HELPERS] = brw_imm_ud(0);
 
+   fs_inst *inst;
    switch (instr->def.bit_size) {
    case 16: {
       fs_reg dest32 = bld.vgrf(BRW_TYPE_UD);
-      bld.emit(SHADER_OPCODE_A64_UNTYPED_ATOMIC_LOGICAL,
-               retype(dest32, dest.type),
-               srcs, A64_LOGICAL_NUM_SRCS);
+      inst = bld.emit(SHADER_OPCODE_A64_UNTYPED_ATOMIC_LOGICAL,
+                      retype(dest32, dest.type),
+                      srcs, A64_LOGICAL_NUM_SRCS);
+      inst->size_written = instr->def.num_components *
+                           dest32.component_size(inst->exec_size);
       bld.MOV(retype(dest, BRW_TYPE_UW), dest32);
       break;
    }
    case 32:
    case 64:
-      bld.emit(SHADER_OPCODE_A64_UNTYPED_ATOMIC_LOGICAL, dest,
-               srcs, A64_LOGICAL_NUM_SRCS);
+      inst = bld.emit(SHADER_OPCODE_A64_UNTYPED_ATOMIC_LOGICAL, dest,
+                      srcs, A64_LOGICAL_NUM_SRCS);
+      inst->size_written = instr->def.num_components *
+                           dest.component_size(inst->exec_size);
       break;
    default:
       unreachable("Unsupported bit size");
