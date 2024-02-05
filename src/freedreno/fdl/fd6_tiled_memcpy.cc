@@ -127,13 +127,13 @@ get_pixel_offset(uint32_t x, uint32_t y)
 static uint32_t
 block_x_xormask(uint32_t x, uint32_t cpp)
 {
-   return (((x & 1) * 7) ^ (cpp < 16 ? (x & 0b110) : 0) ^ ((x >> 1) << 3)) << 8;
+   return (((x & 1) * 7) ^ (cpp < 16 ? (x & 0b010) : 0) ^ ((x >> 1) << 3)) << 8;
 }
 
 static uint32_t
 block_y_xormask(uint32_t y, uint32_t cpp, uint32_t bank_mask, uint32_t bank_shift)
 {
-   return ((((y & 1) * 6) ^ (((y >> 1) & 1) * 3) ^ (cpp < 16 ? (y & 0b100) : 0)) << 8) |
+   return ((((y & 1) * 6) ^ (((y >> 1) & 1) * 3)) << 8) |
       ((y & bank_mask) << bank_shift);
 }
 
