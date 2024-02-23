@@ -23,6 +23,11 @@ enum tu_bo_alloc_flags
    TU_BO_ALLOC_REPLAYABLE = 1 << 2,
 };
 
+enum tu_mem_sync_op {
+   TU_MEM_SYNC_CACHE_TO_GPU,
+   TU_MEM_SYNC_CACHE_FROM_GPU,
+};
+
 /* Define tu_timeline_sync type based on drm syncobj for a point type
  * for vk_sync_timeline, and the logic to handle is mostly copied from
  * anv_bo_sync since it seems it can be used by similar way to anv.
@@ -53,6 +58,13 @@ struct tu_bo {
    uint32_t bo_list_idx;
 
    bool implicit_sync : 1;
+   bool cached_non_coherent : 1;
+};
+
+struct tu_mapped_memory_range {
+   struct tu_bo *bo;
+   VkDeviceSize offset;
+   VkDeviceSize size;
 };
 
 struct tu_knl {
@@ -82,6 +94,10 @@ struct tu_knl {
                                    struct tu_u_trace_syncobj *syncobj);
    VkResult (*queue_submit)(struct tu_queue *queue,
                             struct vk_queue_submit *submit);
+   void (*sync_cache_bos)(struct tu_device *dev,
+                          enum tu_mem_sync_op op,
+                          uint32_t range_count,
+                          const struct tu_mapped_memory_range *ranges);
 
    const struct vk_device_entrypoint_table *device_entrypoints;
 };
@@ -154,6 +170,13 @@ tu_bo_get_ref(struct tu_bo *bo)
    p_atomic_inc(&bo->refcnt);
    return bo;
 }
+
+void
+tu_sync_cache_bo(struct tu_device *dev,
+                 struct tu_bo *bo,
+                 VkDeviceSize offset,
+                 VkDeviceSize range,
+                 enum tu_mem_sync_op op);
 
 VkResult tu_knl_kgsl_load(struct tu_instance *instance, int fd);
 
