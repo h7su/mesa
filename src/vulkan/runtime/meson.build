@@ -26,8 +26,6 @@ vulkan_runtime_files = files(
   'rmv/vk_rmv_common.h',
   'rmv/vk_rmv_exporter.c',
   'rmv/vk_rmv_tokens.h',
-  'vk_acceleration_structure.c',
-  'vk_acceleration_structure.h',
   'vk_blend.c',
   'vk_blend.h',
   'vk_buffer.c',
@@ -142,13 +140,20 @@ if with_platform_android
 endif
 
 if prog_glslang.found()
+  subdir('radix_sort')
+  subdir('bvh')
   vulkan_runtime_files += files('vk_texcompress_astc.c', 'vk_texcompress_astc.h')
+  vulkan_runtime_files += files('vk_acceleration_structure.c', 'vk_acceleration_structure.h')
   vulkan_runtime_files += custom_target(
     'astc_spv.h',
     input : astc_decoder_glsl_file,
     output : 'astc_spv.h',
     command : [prog_glslang, '-V', '-S', 'comp', '-x', '-o', '@OUTPUT@', '@INPUT@'] + glslang_quiet,
     )
+  vulkan_runtime_files += radix_sort_files
+else
+  bvh_spv = []
+  radix_sort_spv = []
 endif
 
 vk_common_entrypoints = custom_target(
@@ -252,7 +257,7 @@ libvulkan_runtime = static_library(
    vk_cmd_queue, vk_cmd_enqueue_entrypoints,
    vk_dispatch_trampolines, vk_physical_device_features,
    vk_physical_device_properties, vk_synchronization_helpers,
-   vk_format_info],
+   vk_format_info, bvh_spv, radix_sort_spv],
   include_directories : [inc_include, inc_src],
   dependencies : vulkan_runtime_deps,
   c_args : c_msvc_compat_args,
@@ -262,7 +267,7 @@ libvulkan_runtime = static_library(
 
 idep_vulkan_runtime_headers = declare_dependency(
   sources : [vk_cmd_queue[1], vk_physical_device_features[1], vk_physical_device_properties[1]],
-  include_directories : include_directories('.'),
+  include_directories : include_directories('.', 'bvh'),
 )
 
 idep_vulkan_common_entrypoints_h = declare_dependency(
