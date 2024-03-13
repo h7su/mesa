@@ -81,6 +81,17 @@ zink-anv-tgl-traces-restricted:
     PIGLIT_REPLAY_EXTRA_ARGS: --db-path ${CI_PROJECT_DIR}/replayer-db/ --minio_bucket=${S3_TRACIE_PRIVATE_BUCKET} --jwt-file=${S3_JWT_FILE}
   allow_failure: true
 
+zink-nvk-ga106-glcts-piglit-valve:
+  timeout: 45m
+  extends:
+    - .zink-nvk-glcts-piglit-valve
+    - .zink-nvk-manual-rules
+    - .nvk-ga106-valve
+  variables:
+    GPU_VERSION: zink-nvk
+    B2C_TIMEOUT_OVERALL_MINUTES: 40  # usual run time: 26min
+    ZINK_DEBUG: quiet  # otherwise log is flooded with `ERROR - Piglit error: MESA: warning: WARNING: Incorrect rendering will happen because the Vulkan device doesn't support the 'EXT_image_drm_format_modifier' feature`
+
 zink-tu-a618:
   extends:
     - .lava-test-deqp:arm64
