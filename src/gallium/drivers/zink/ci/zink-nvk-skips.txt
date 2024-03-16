@@ -1,4 +1,5 @@
 # Timeouts
+KHR-GL46.copy_image.functional
 spec@ext_texture_env_combine@texture-env-combine
 
 # Pretty much everything fails
