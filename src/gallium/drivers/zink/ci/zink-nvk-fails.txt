@@ -1110,7 +1110,6 @@ spec@egl_khr_fence_sync@conformance,Crash
 spec@egl_khr_gl_image@egl_khr_gl_renderbuffer_image-clear-shared-image gl_depth_component24,Fail
 spec@egl_khr_surfaceless_context@viewport,Fail
 spec@egl_mesa_platform_surfaceless@conformance,Crash
-spec@ext_external_objects@vk-image-display-muliple-textures,Crash
 spec@ext_external_objects@vk-image-overwrite,Crash
 spec@ext_external_objects@vk-image-overwrite@RGBA 4 UNORM optimal,Fail
 spec@ext_framebuffer_multisample@blit-mismatched-formats,Fail
@@ -1165,6 +1164,5 @@ spec@khr_texture_compression_astc@sliced-3d-miptree-gl srgb-fp,Fail
 spec@khr_texture_compression_astc@sliced-3d-miptree-gl srgb-fp@sRGB decode full precision,Fail
 spec@khr_texture_compression_astc@sliced-3d-miptree-gles srgb-fp,Fail
 spec@khr_texture_compression_astc@sliced-3d-miptree-gles srgb-fp@sRGB decode full precision,Fail
-spec@nv_primitive_restart@primitive-restart-draw-mode-polygon,Fail
 spec@oes_shader_io_blocks@compiler@layout-location-aliasing.vert,Fail
 spec@oes_viewport_array@viewport-gs-writes-out-of-range,Fail
