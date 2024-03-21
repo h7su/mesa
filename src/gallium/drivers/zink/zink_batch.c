@@ -274,6 +274,16 @@ zink_batch_reset_all(struct zink_context *ctx)
    }
 }
 
+static inline void
+zink_cmdbuf_destroy(struct zink_screen *screen,
+                    VkCommandPool cmdpool,
+                    struct zink_cmdbuf *cmdbuf)
+{
+   if (cmdbuf->vk)
+      VKSCR(FreeCommandBuffers)(screen->dev, cmdpool, 1, &cmdbuf->vk);
+}
+
+
 /* called only on context destruction */
 void
 zink_batch_state_destroy(struct zink_screen *screen, struct zink_batch_state *bs)
@@ -286,16 +296,15 @@ zink_batch_state_destroy(struct zink_screen *screen, struct zink_batch_state *bs
    cnd_destroy(&bs->usage.flush);
    mtx_destroy(&bs->usage.mtx);
 
-   if (bs->cmdbuf)
-      VKSCR(FreeCommandBuffers)(screen->dev, bs->cmdpool, 1, &bs->cmdbuf);
-   if (bs->reordered_cmdbuf)
-      VKSCR(FreeCommandBuffers)(screen->dev, bs->cmdpool, 1, &bs->reordered_cmdbuf);
-   if (bs->cmdpool)
+   if (bs->cmdpool) {
+      zink_cmdbuf_destroy(screen, bs->cmdpool, &bs->main_cmdbuf);
+      zink_cmdbuf_destroy(screen, bs->cmdpool, &bs->reordered_cmdbuf);
       VKSCR(DestroyCommandPool)(screen->dev, bs->cmdpool, NULL);
-   if (bs->unsynchronized_cmdbuf)
-      VKSCR(FreeCommandBuffers)(screen->dev, bs->unsynchronized_cmdpool, 1, &bs->unsynchronized_cmdbuf);
-   if (bs->unsynchronized_cmdpool)
+   }
+   if (bs->unsynchronized_cmdpool) {
+      zink_cmdbuf_destroy(screen, bs->unsynchronized_cmdpool, &bs->unsynchronized_cmdbuf);
       VKSCR(DestroyCommandPool)(screen->dev, bs->unsynchronized_cmdpool, NULL);
+   }
    free(bs->real_objs.objs);
    free(bs->slab_objs.objs);
    free(bs->sparse_objs.objs);
@@ -364,13 +373,13 @@ create_batch_state(struct zink_context *ctx)
       }
    );
 
-   bs->cmdbuf = cmdbufs[0];
-   bs->reordered_cmdbuf = cmdbufs[1];
+   bs->main_cmdbuf.vk = cmdbufs[0];
+   bs->reordered_cmdbuf.vk = cmdbufs[1];
 
    cbai.commandPool = bs->unsynchronized_cmdpool;
    cbai.commandBufferCount = 1;
    VRAM_ALLOC_LOOP(result,
-      VKSCR(AllocateCommandBuffers)(screen->dev, &cbai, &bs->unsynchronized_cmdbuf);,
+      VKSCR(AllocateCommandBuffers)(screen->dev, &cbai, &bs->unsynchronized_cmdbuf.vk);,
       if (result != VK_SUCCESS) {
          mesa_loge("ZINK: vkAllocateCommandBuffers failed (%s)", vk_Result_to_str(result));
          goto fail;
@@ -518,8 +527,8 @@ zink_batch_bind_db(struct zink_context *ctx)
       assert(infos[1].usage);
       count++;
    }
-   VKSCR(CmdBindDescriptorBuffersEXT)(batch->state->cmdbuf, count, infos);
-   VKSCR(CmdBindDescriptorBuffersEXT)(batch->state->reordered_cmdbuf, count, infos);
+   VKSCR(CmdBindDescriptorBuffersEXT)(batch->state->main_cmdbuf.vk, count, infos);
+   VKSCR(CmdBindDescriptorBuffersEXT)(batch->state->reordered_cmdbuf.vk, count, infos);
    batch->state->dd.db_bound = true;
 }
 
@@ -538,17 +547,17 @@ zink_start_batch(struct zink_context *ctx, struct zink_batch *batch)
 
    VkResult result;
    VRAM_ALLOC_LOOP(result,
-      VKCTX(BeginCommandBuffer)(batch->state->cmdbuf, &cbbi),
+      VKCTX(BeginCommandBuffer)(batch->state->main_cmdbuf.vk, &cbbi),
       if (result != VK_SUCCESS)
          mesa_loge("ZINK: vkBeginCommandBuffer failed (%s)", vk_Result_to_str(result));
    );
    VRAM_ALLOC_LOOP(result,
-      VKCTX(BeginCommandBuffer)(batch->state->reordered_cmdbuf, &cbbi),
+      VKCTX(BeginCommandBuffer)(batch->state->reordered_cmdbuf.vk, &cbbi),
       if (result != VK_SUCCESS)
          mesa_loge("ZINK: vkBeginCommandBuffer failed (%s)", vk_Result_to_str(result));
    );
    VRAM_ALLOC_LOOP(result,
-      VKCTX(BeginCommandBuffer)(batch->state->unsynchronized_cmdbuf, &cbbi),
+      VKCTX(BeginCommandBuffer)(batch->state->unsynchronized_cmdbuf.vk, &cbbi),
       if (result != VK_SUCCESS)
          mesa_loge("ZINK: vkBeginCommandBuffer failed (%s)", vk_Result_to_str(result));
    );
@@ -567,9 +576,9 @@ zink_start_batch(struct zink_context *ctx, struct zink_batch *batch)
       capture_label.pNext = NULL;
       capture_label.pLabelName = "vr-marker,frame_end,type,application";
       memset(capture_label.color, 0, sizeof(capture_label.color));
-      VKCTX(CmdInsertDebugUtilsLabelEXT)(batch->state->unsynchronized_cmdbuf, &capture_label);
-      VKCTX(CmdInsertDebugUtilsLabelEXT)(batch->state->reordered_cmdbuf, &capture_label);
-      VKCTX(CmdInsertDebugUtilsLabelEXT)(batch->state->cmdbuf, &capture_label);
+      VKCTX(CmdInsertDebugUtilsLabelEXT)(batch->state->unsynchronized_cmdbuf.vk, &capture_label);
+      VKCTX(CmdInsertDebugUtilsLabelEXT)(batch->state->reordered_cmdbuf.vk, &capture_label);
+      VKCTX(CmdInsertDebugUtilsLabelEXT)(batch->state->main_cmdbuf.vk, &capture_label);
    }
 
    unsigned renderdoc_frame = p_atomic_read(&screen->renderdoc_frame);
@@ -585,9 +594,9 @@ zink_start_batch(struct zink_context *ctx, struct zink_batch *batch)
       zink_batch_bind_db(ctx);
    /* zero init for unordered blits */
    if (screen->info.have_EXT_attachment_feedback_loop_dynamic_state) {
-      VKCTX(CmdSetAttachmentFeedbackLoopEnableEXT)(ctx->batch.state->cmdbuf, 0);
-      VKCTX(CmdSetAttachmentFeedbackLoopEnableEXT)(ctx->batch.state->reordered_cmdbuf, 0);
-      VKCTX(CmdSetAttachmentFeedbackLoopEnableEXT)(ctx->batch.state->unsynchronized_cmdbuf, 0);
+      VKCTX(CmdSetAttachmentFeedbackLoopEnableEXT)(ctx->batch.state->main_cmdbuf.vk, 0);
+      VKCTX(CmdSetAttachmentFeedbackLoopEnableEXT)(ctx->batch.state->reordered_cmdbuf.vk, 0);
+      VKCTX(CmdSetAttachmentFeedbackLoopEnableEXT)(ctx->batch.state->unsynchronized_cmdbuf.vk, 0);
    }
 }
 
@@ -673,10 +682,10 @@ submit_queue(void *data, void *gdata, int thread_index)
    VkCommandBuffer cmdbufs[3];
    unsigned c = 0;
    if (bs->has_unsync)
-      cmdbufs[c++] = bs->unsynchronized_cmdbuf;
+      cmdbufs[c++] = bs->unsynchronized_cmdbuf.vk;
    if (bs->has_barriers)
-      cmdbufs[c++] = bs->reordered_cmdbuf;
-   cmdbufs[c++] = bs->cmdbuf;
+      cmdbufs[c++] = bs->reordered_cmdbuf.vk;
+   cmdbufs[c++] = bs->main_cmdbuf.vk;
    si[ZINK_SUBMIT_CMDBUF].pCommandBuffers = cmdbufs;
    si[ZINK_SUBMIT_CMDBUF].commandBufferCount = c;
    /* assorted signal submit from wsi/externals */
@@ -704,7 +713,7 @@ submit_queue(void *data, void *gdata, int thread_index)
 
    VkResult result;
    VRAM_ALLOC_LOOP(result,
-      VKSCR(EndCommandBuffer)(bs->cmdbuf),
+      VKSCR(EndCommandBuffer)(bs->main_cmdbuf.vk),
       if (result != VK_SUCCESS) {
          mesa_loge("ZINK: vkEndCommandBuffer failed (%s)", vk_Result_to_str(result));
          bs->is_device_lost = true;
@@ -718,13 +727,13 @@ submit_queue(void *data, void *gdata, int thread_index)
          mb.pNext = NULL;
          mb.srcAccessMask = bs->unordered_write_access;
          mb.dstAccessMask = VK_ACCESS_NONE;
-         VKSCR(CmdPipelineBarrier)(bs->reordered_cmdbuf,
+         VKSCR(CmdPipelineBarrier)(bs->reordered_cmdbuf.vk,
                                    bs->unordered_write_stages,
                                    screen->info.have_KHR_synchronization2 ? VK_PIPELINE_STAGE_NONE : VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
                                    0, 1, &mb, 0, NULL, 0, NULL);
       }
       VRAM_ALLOC_LOOP(result,
-         VKSCR(EndCommandBuffer)(bs->reordered_cmdbuf),
+         VKSCR(EndCommandBuffer)(bs->reordered_cmdbuf.vk),
          if (result != VK_SUCCESS) {
             mesa_loge("ZINK: vkEndCommandBuffer failed (%s)", vk_Result_to_str(result));
             bs->is_device_lost = true;
@@ -734,7 +743,7 @@ submit_queue(void *data, void *gdata, int thread_index)
    }
    if (bs->has_unsync) {
       VRAM_ALLOC_LOOP(result,
-         VKSCR(EndCommandBuffer)(bs->unsynchronized_cmdbuf),
+         VKSCR(EndCommandBuffer)(bs->unsynchronized_cmdbuf.vk),
          if (result != VK_SUCCESS) {
             mesa_loge("ZINK: vkEndCommandBuffer failed (%s)", vk_Result_to_str(result));
             bs->is_device_lost = true;
@@ -856,14 +865,14 @@ zink_end_batch(struct zink_context *ctx, struct zink_batch *batch)
             1,
             &imb
          };
-         VKCTX(CmdPipelineBarrier2)(bs->cmdbuf, &dep);
+         VKCTX(CmdPipelineBarrier2)(bs->main_cmdbuf.vk, &dep);
       } else {
          VkImageMemoryBarrier imb;
          zink_resource_image_barrier_init(&imb, res, res->layout, 0, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
          imb.srcQueueFamilyIndex = screen->gfx_queue;
          imb.dstQueueFamilyIndex = VK_QUEUE_FAMILY_FOREIGN_EXT;
          VKCTX(CmdPipelineBarrier)(
-            bs->cmdbuf,
+            bs->main_cmdbuf.vk,
             res->obj->access_stage,
             VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
             0,

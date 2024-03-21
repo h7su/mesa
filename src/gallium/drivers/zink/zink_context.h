@@ -103,7 +103,7 @@ void
 zink_reset_ds3_states(struct zink_context *ctx);
 bool
 zink_check_batch_completion(struct zink_context *ctx, uint64_t batch_id);
-VkCommandBuffer
+struct zink_cmdbuf *
 zink_get_cmdbuf(struct zink_context *ctx, struct zink_resource *src, struct zink_resource *dst);
 unsigned
 zink_update_rendering_info(struct zink_context *ctx);
@@ -198,9 +198,9 @@ zink_update_barriers(struct zink_context *ctx, bool is_compute,
 
 
 bool
-zink_cmd_debug_marker_begin(struct zink_context *ctx, VkCommandBuffer cmdbuf, const char *fmt, ...);
+zink_cmd_debug_marker_begin(struct zink_context *ctx, struct zink_cmdbuf *cmdbuf, const char *fmt, ...);
 void
-zink_cmd_debug_marker_end(struct zink_context *ctx, VkCommandBuffer cmdbuf,bool emitted);
+zink_cmd_debug_marker_end(struct zink_context *ctx, struct zink_cmdbuf *cmdbuf, bool emitted);
 void
 zink_copy_buffer(struct zink_context *ctx, struct zink_resource *dst, struct zink_resource *src,
                  unsigned dst_offset, unsigned src_offset, unsigned size);
