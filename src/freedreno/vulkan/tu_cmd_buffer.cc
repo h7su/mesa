@@ -2473,13 +2473,19 @@ tu_CmdBindIndexBuffer2KHR(VkCommandBuffer commandBuffer,
       unreachable("invalid VkIndexType");
    }
 
-   /* initialize/update the restart index */
-   if (cmd->state.index_size != index_size)
-      tu_cs_emit_regs(&cmd->draw_cs, A6XX_PC_RESTART_INDEX(restart_index));
+   if (buf) {
+      /* initialize/update the restart index */
+      if (cmd->state.index_size != index_size)
+         tu_cs_emit_regs(&cmd->draw_cs, A6XX_PC_RESTART_INDEX(restart_index));
 
-   cmd->state.index_va = buf->iova + offset;
-   cmd->state.max_index_count = size >> index_shift;
-   cmd->state.index_size = index_size;
+      cmd->state.index_va = buf->iova + offset;
+      cmd->state.max_index_count = size >> index_shift;
+      cmd->state.index_size = index_size;
+   } else {
+      cmd->state.index_va = 0;
+      cmd->state.max_index_count = 0;
+      cmd->state.index_size = 0;
+   }
 }
 
 template <chip CHIP>
