@@ -473,7 +473,6 @@ struct update_unordered_access_and_get_cmdbuf<true> {
       assert(!usage_matches);
       res->obj->unordered_write = true;
       res->obj->unordered_read = true;
-      ctx->batch.state->has_unsync = true;
       return &ctx->batch.state->unsynchronized_cmdbuf;
    }
 };

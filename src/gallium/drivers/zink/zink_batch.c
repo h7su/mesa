@@ -193,7 +193,6 @@ zink_reset_batch_state(struct zink_context *ctx, struct zink_batch_state *bs)
     */
    bs->fence.submitted = false;
    bs->has_barriers = false;
-   bs->has_unsync = false;
    if (bs->fence.batch_id)
       zink_screen_update_last_finished(screen, bs->fence.batch_id);
    bs->fence.batch_id = 0;
@@ -685,7 +684,7 @@ submit_queue(void *data, void *gdata, int thread_index)
    si[ZINK_SUBMIT_CMDBUF].pWaitDstStageMask = bs->wait_semaphore_stages.data;
    VkCommandBuffer cmdbufs[3];
    unsigned c = 0;
-   if (bs->has_unsync)
+   if (bs->unsynchronized_cmdbuf.has_work)
       cmdbufs[c++] = bs->unsynchronized_cmdbuf.vk;
    if (bs->has_barriers)
       cmdbufs[c++] = bs->reordered_cmdbuf.vk;
@@ -746,7 +745,7 @@ submit_queue(void *data, void *gdata, int thread_index)
          }
       );
    }
-   if (bs->has_unsync) {
+   if (bs->unsynchronized_cmdbuf.has_work) {
       VRAM_ALLOC_LOOP(result,
          VKSCR(EndCommandBuffer)(bs->unsynchronized_cmdbuf.vk),
          if (result != VK_SUCCESS) {
