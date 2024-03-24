@@ -664,7 +664,6 @@ struct zink_batch_state {
    VkDeviceSize resource_size;
 
    bool is_device_lost;
-   bool has_barriers;
 };
 
 static inline struct zink_batch_state *

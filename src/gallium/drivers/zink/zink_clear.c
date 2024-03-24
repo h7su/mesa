@@ -723,7 +723,6 @@ fb_clears_apply_internal(struct zink_context *ctx, struct pipe_resource *pres, i
          ctx->batch.state->main_cmdbuf = ctx->batch.state->reordered_cmdbuf;
          ctx->rp_changed = true;
          ctx->queries_disabled = true;
-         ctx->batch.state->has_barriers = true;
       }
       /* this will automatically trigger all the clears */
       zink_batch_rp(ctx);

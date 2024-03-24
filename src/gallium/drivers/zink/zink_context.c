@@ -4529,7 +4529,6 @@ zink_copy_buffer(struct zink_context *ctx, struct zink_resource *dst, struct zin
    bool unordered_dst = zink_resource_buffer_transfer_dst_barrier(ctx, dst, dst_offset, size);
    bool can_unorder = unordered_dst && unordered_src && !(zink_debug & ZINK_DEBUG_NOREORDER);
    struct zink_cmdbuf *cmdbuf = can_unorder ? &ctx->batch.state->reordered_cmdbuf : zink_get_cmdbuf(ctx, src, dst);
-   ctx->batch.state->has_barriers |= can_unorder;
    zink_batch_reference_resource_rw(batch, src, false);
    zink_batch_reference_resource_rw(batch, dst, true);
    if (unlikely(zink_debug & ZINK_DEBUG_SYNC)) {

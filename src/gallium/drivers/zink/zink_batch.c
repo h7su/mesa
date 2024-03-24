@@ -192,7 +192,6 @@ zink_reset_batch_state(struct zink_context *ctx, struct zink_batch_state *bs)
     * before the state is reused
     */
    bs->fence.submitted = false;
-   bs->has_barriers = false;
    if (bs->fence.batch_id)
       zink_screen_update_last_finished(screen, bs->fence.batch_id);
    bs->fence.batch_id = 0;
@@ -686,7 +685,7 @@ submit_queue(void *data, void *gdata, int thread_index)
    unsigned c = 0;
    if (bs->unsynchronized_cmdbuf.has_work)
       cmdbufs[c++] = bs->unsynchronized_cmdbuf.vk;
-   if (bs->has_barriers)
+   if (bs->reordered_cmdbuf.has_work)
       cmdbufs[c++] = bs->reordered_cmdbuf.vk;
    cmdbufs[c++] = bs->main_cmdbuf.vk;
    si[ZINK_SUBMIT_CMDBUF].pCommandBuffers = cmdbufs;
@@ -723,7 +722,7 @@ submit_queue(void *data, void *gdata, int thread_index)
          goto end;
       }
    );
-   if (bs->has_barriers) {
+   if (bs->reordered_cmdbuf.has_work) {
       if (bs->unordered_write_access) {
          VkMemoryBarrier mb;
          mb.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
@@ -734,7 +733,6 @@ submit_queue(void *data, void *gdata, int thread_index)
                                    bs->unordered_write_stages,
                                    screen->info.have_KHR_synchronization2 ? VK_PIPELINE_STAGE_NONE : VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
                                    0, 1, &mb, 0, NULL, 0, NULL);
-         bs->reordered_cmdbuf.has_work = true;
       }
       VRAM_ALLOC_LOOP(result,
          VKSCR(EndCommandBuffer)(bs->reordered_cmdbuf.vk),

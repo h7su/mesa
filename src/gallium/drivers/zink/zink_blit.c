@@ -440,7 +440,6 @@ zink_blit(struct pipe_context *pctx,
       ctx->batch.in_rp = false;
       ctx->rp_changed = true;
       ctx->queries_disabled = true;
-      ctx->batch.state->has_barriers = true;
       ctx->pipeline_changed[0] = true;
       zink_reset_ds3_states(ctx);
       zink_select_draw_vbo(ctx);
