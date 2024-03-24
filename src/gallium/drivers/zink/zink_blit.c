@@ -137,6 +137,7 @@ blit_resolve(struct zink_context *ctx, const struct pipe_blit_info *info, bool *
    VKCTX(CmdResolveImage)(cmdbuf->vk, use_src->obj->image, src->layout,
                      dst->obj->image, dst->layout,
                      1, &region);
+   cmdbuf->has_work = true;
    zink_cmd_debug_marker_end(ctx, cmdbuf, marker);
 
    return true;
@@ -297,6 +298,7 @@ blit_native(struct zink_context *ctx, const struct pipe_blit_info *info, bool *n
                   dst->obj->image, dst->layout,
                   1, &region,
                   zink_filter(info->filter));
+   cmdbuf->has_work = true;
 
    zink_cmd_debug_marker_end(ctx, cmdbuf, marker);
 

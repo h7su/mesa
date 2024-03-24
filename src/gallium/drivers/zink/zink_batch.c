@@ -93,6 +93,10 @@ zink_reset_batch_state(struct zink_context *ctx, struct zink_batch_state *bs)
    if (result != VK_SUCCESS)
       mesa_loge("ZINK: vkResetCommandPool failed (%s)", vk_Result_to_str(result));
 
+   bs->main_cmdbuf.has_work = false;
+   bs->reordered_cmdbuf.has_work = false;
+   bs->unsynchronized_cmdbuf.has_work = false;
+
    /* unref/reset all used resources */
    reset_obj_list(screen, bs, &bs->real_objs);
    reset_obj_list(screen, bs, &bs->slab_objs);
@@ -731,6 +735,7 @@ submit_queue(void *data, void *gdata, int thread_index)
                                    bs->unordered_write_stages,
                                    screen->info.have_KHR_synchronization2 ? VK_PIPELINE_STAGE_NONE : VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
                                    0, 1, &mb, 0, NULL, 0, NULL);
+         bs->reordered_cmdbuf.has_work = true;
       }
       VRAM_ALLOC_LOOP(result,
          VKSCR(EndCommandBuffer)(bs->reordered_cmdbuf.vk),
@@ -866,6 +871,7 @@ zink_end_batch(struct zink_context *ctx, struct zink_batch *batch)
             &imb
          };
          VKCTX(CmdPipelineBarrier2)(bs->main_cmdbuf.vk, &dep);
+         bs->main_cmdbuf.has_work = true;
       } else {
          VkImageMemoryBarrier imb;
          zink_resource_image_barrier_init(&imb, res, res->layout, 0, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
@@ -880,6 +886,7 @@ zink_end_batch(struct zink_context *ctx, struct zink_batch *batch)
             0, NULL,
             1, &imb
          );
+         bs->main_cmdbuf.has_work = true;
       }
       res->queue = VK_QUEUE_FAMILY_FOREIGN_EXT;
 

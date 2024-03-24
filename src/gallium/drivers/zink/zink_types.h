@@ -593,6 +593,7 @@ struct zink_batch_obj_list {
 
 struct zink_cmdbuf {
    VkCommandBuffer vk;
+   bool has_work;
 };
 
 struct zink_batch_state {

@@ -109,6 +109,8 @@ clear_in_rp(struct pipe_context *pctx,
    struct zink_batch *batch = &ctx->batch;
    assert(batch->in_rp);
    VKCTX(CmdClearAttachments)(batch->state->main_cmdbuf.vk, num_attachments, attachments, 1, &cr);
+   batch->state->main_cmdbuf.has_work = true;
+
    /*
        Rendering within a subpass containing a feedback loop creates a data race, except in the following
        cases:
@@ -503,6 +505,7 @@ zink_clear_texture_dynamic(struct pipe_context *pctx,
       clear_att.clearValue = att.clearValue;
 
       VKCTX(CmdClearAttachments)(cmdbuf->vk, 1, &clear_att, 1, &rect);
+      cmdbuf->has_work = true;
    }
    VKCTX(CmdEndRendering)(cmdbuf->vk);
    zink_batch_reference_resource_rw(&ctx->batch, res, true);
@@ -593,6 +596,7 @@ zink_clear_buffer(struct pipe_context *pctx,
       struct zink_cmdbuf *cmdbuf = zink_get_cmdbuf(ctx, NULL, res);
       zink_batch_reference_resource_rw(&ctx->batch, res, true);
       VKCTX(CmdFillBuffer)(cmdbuf->vk, res->obj->buffer, offset, size, *(uint32_t*)clear_value);
+      cmdbuf->has_work = true;
       return;
    }
    struct pipe_transfer *xfer;

@@ -248,16 +248,18 @@ draw_indexed_need_index_buffer_unref(struct zink_context *ctx,
          VKCTX(CmdDrawIndexed)(cmdbuf->vk,
             draws[i].count, dinfo->instance_count,
             0, draws[i].index_bias, dinfo->start_instance);
+         cmdbuf->has_work = true;
          draw_id++;
       }
    } else {
       if (needs_drawid)
          update_drawid(ctx, draw_id);
-      for (unsigned i = 0; i < num_draws; i++)
+      for (unsigned i = 0; i < num_draws; i++) {
          VKCTX(CmdDrawIndexed)(cmdbuf->vk,
             draws[i].count, dinfo->instance_count,
             0, draws[i].index_bias, dinfo->start_instance);
-
+         cmdbuf->has_work = true;
+      }
    }
 }
 
@@ -308,6 +310,7 @@ draw_indexed(struct zink_context *ctx,
          VKCTX(CmdDrawIndexed)(cmdbuf->vk,
             draws[i].count, dinfo->instance_count,
             draws[i].start, draws[i].index_bias, dinfo->start_instance);
+         cmdbuf->has_work = true;
          draw_id++;
       }
    } else {
@@ -318,11 +321,14 @@ draw_indexed(struct zink_context *ctx,
                                        dinfo->instance_count,
                                        dinfo->start_instance, sizeof(struct pipe_draw_start_count_bias),
                                        dinfo->index_bias_varies ? NULL : &draws[0].index_bias);
+         cmdbuf->has_work = true;
       } else {
-         for (unsigned i = 0; i < num_draws; i++)
+         for (unsigned i = 0; i < num_draws; i++) {
             VKCTX(CmdDrawIndexed)(cmdbuf->vk,
                draws[i].count, dinfo->instance_count,
                draws[i].start, draws[i].index_bias, dinfo->start_instance);
+            cmdbuf->has_work = true;
+         }
       }
    }
 }
@@ -372,19 +378,23 @@ draw(struct zink_context *ctx,
       for (unsigned i = 0; i < num_draws; i++) {
          update_drawid(ctx, draw_id);
          VKCTX(CmdDraw)(cmdbuf->vk, draws[i].count, dinfo->instance_count, draws[i].start, dinfo->start_instance);
+         cmdbuf->has_work = true;
          draw_id++;
       }
    } else {
       if (needs_drawid)
          update_drawid(ctx, draw_id);
-      if (HAS_MULTIDRAW)
+      if (HAS_MULTIDRAW) {
          VKCTX(CmdDrawMultiEXT)(cmdbuf->vk, num_draws, (const VkMultiDrawInfoEXT*)draws,
                                 dinfo->instance_count, dinfo->start_instance,
                                 sizeof(struct pipe_draw_start_count_bias));
+         cmdbuf->has_work = true;
+      }
       else {
-         for (unsigned i = 0; i < num_draws; i++)
+         for (unsigned i = 0; i < num_draws; i++) {
             VKCTX(CmdDraw)(cmdbuf->vk, draws[i].count, dinfo->instance_count, draws[i].start, dinfo->start_instance);
-
+            cmdbuf->has_work = true;
+         }
       }
    }
 }
@@ -602,6 +612,7 @@ zink_draw(struct pipe_context *pctx,
                                 VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
                                 VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
                                 0, 1, &mb, 0, NULL, 0, NULL);
+      ctx->batch.state->main_cmdbuf.has_work = true;
    }
 
    zink_batch_rp(ctx);
@@ -1052,8 +1063,11 @@ zink_draw(struct pipe_context *pctx,
              VKCTX(CmdDrawIndexedIndirectCount)(batch->state->main_cmdbuf.vk, indirect->obj->buffer, dindirect->offset,
                                                 indirect_draw_count->obj->buffer, dindirect->indirect_draw_count_offset,
                                                 dindirect->draw_count, dindirect->stride);
-         } else
+             batch->state->main_cmdbuf.has_work = true;
+         } else {
             VKCTX(CmdDrawIndexedIndirect)(batch->state->main_cmdbuf.vk, indirect->obj->buffer, dindirect->offset, dindirect->draw_count, dindirect->stride);
+             batch->state->main_cmdbuf.has_work = true;
+         }
       } else {
          if (unlikely(can_dgc)) {
             if (need_index_buffer_unref)
@@ -1080,6 +1094,7 @@ zink_draw(struct pipe_context *pctx,
             VKCTX(CmdDrawIndirectByteCountEXT)(batch->state->main_cmdbuf.vk, dinfo->instance_count, dinfo->start_instance,
                                           zink_resource(so_target->counter_buffer)->obj->buffer, so_target->counter_buffer_offset, 0,
                                           MIN2(so_target->stride, screen->info.tf_props.maxTransformFeedbackBufferDataStride));
+            batch->state->main_cmdbuf.has_work = true;
          }
       } else if (dindirect && dindirect->buffer) {
          assert(num_draws == 1);
@@ -1093,8 +1108,11 @@ zink_draw(struct pipe_context *pctx,
              VKCTX(CmdDrawIndirectCount)(batch->state->main_cmdbuf.vk, indirect->obj->buffer, dindirect->offset,
                                            indirect_draw_count->obj->buffer, dindirect->indirect_draw_count_offset,
                                            dindirect->draw_count, dindirect->stride);
-         } else
+             batch->state->main_cmdbuf.has_work = true;
+         } else {
             VKCTX(CmdDrawIndirect)(batch->state->main_cmdbuf.vk, indirect->obj->buffer, dindirect->offset, dindirect->draw_count, dindirect->stride);
+            batch->state->main_cmdbuf.has_work = true;
+         }
       } else {
          if (unlikely(can_dgc))
             draw_dgc(ctx, dinfo, draws, num_draws, drawid_offset, needs_drawid);
@@ -1264,6 +1282,7 @@ zink_launch_grid(struct pipe_context *pctx, const struct pipe_grid_info *info)
                                 VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
                                 VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
                                 0, 1, &mb, 0, NULL, 0, NULL);
+      ctx->batch.state->main_cmdbuf.has_work = true;
    }
 
    zink_program_update_compute_pipeline_state(ctx, ctx->curr_compute, info);
@@ -1299,9 +1318,12 @@ zink_launch_grid(struct pipe_context *pctx, const struct pipe_grid_info *info)
       zink_resume_cs_query(ctx);
    if (info->indirect) {
       VKCTX(CmdDispatchIndirect)(batch->state->main_cmdbuf.vk, zink_resource(info->indirect)->obj->buffer, info->indirect_offset);
+      batch->state->main_cmdbuf.has_work = true;
       zink_batch_reference_resource_rw(batch, zink_resource(info->indirect), false);
-   } else
+   } else {
       VKCTX(CmdDispatch)(batch->state->main_cmdbuf.vk, info->grid[0], info->grid[1], info->grid[2]);
+      batch->state->main_cmdbuf.has_work = true;
+   }
    batch->has_work = true;
    batch->last_was_compute = true;
    /* flush if there's >100k computes */

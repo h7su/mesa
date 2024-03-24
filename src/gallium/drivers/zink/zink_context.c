@@ -4062,6 +4062,7 @@ zink_texture_barrier(struct pipe_context *pctx, unsigned flags)
       }
       */
       VKCTX(CmdPipelineBarrier2)(ctx->batch.state->main_cmdbuf.vk, &dep);
+      ctx->batch.state->main_cmdbuf.has_work = true;
    } else {
       VkMemoryBarrier bmb = {0};
       bmb.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
@@ -4076,6 +4077,7 @@ zink_texture_barrier(struct pipe_context *pctx, unsigned flags)
          0, NULL,
          0, NULL
       );
+      ctx->batch.state->main_cmdbuf.has_work = true;
    }
 }
 
@@ -4090,6 +4092,7 @@ mem_barrier(struct zink_context *ctx, VkPipelineStageFlags src_stage, VkPipeline
    mb.dstAccessMask = dst;
    zink_batch_no_rp(ctx);
    VKCTX(CmdPipelineBarrier)(batch->state->main_cmdbuf.vk, src_stage, dst_stage, 0, 1, &mb, 0, NULL, 0, NULL);
+   ctx->batch.state->main_cmdbuf.has_work = true;
 }
 
 void
@@ -4539,9 +4542,11 @@ zink_copy_buffer(struct zink_context *ctx, struct zink_resource *dst, struct zin
                                 VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
                                 VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
                                 0, 1, &mb, 0, NULL, 0, NULL);
+      cmdbuf->has_work = true;
    }
    bool marker = zink_cmd_debug_marker_begin(ctx, cmdbuf, "copy_buffer(%d)", size);
    VKCTX(CmdCopyBuffer)(cmdbuf->vk, src->obj->buffer, dst->obj->buffer, 1, &region);
+   cmdbuf->has_work = true;
    zink_cmd_debug_marker_end(ctx, cmdbuf, marker);
 }
 
@@ -4661,6 +4666,7 @@ zink_copy_image_buffer(struct zink_context *ctx, struct zink_resource *dst, stru
                                 VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
                                 VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
                                 0, 1, &mb, 0, NULL, 0, NULL);
+      cmdbuf->has_work = true;
    }
    while (aspects) {
       int aspect = 1 << u_bit_scan(&aspects);
@@ -4684,6 +4690,7 @@ zink_copy_image_buffer(struct zink_context *ctx, struct zink_resource *dst, stru
                                                    region.imageExtent.height,
                                                    MAX2(region.imageSubresource.layerCount, region.imageExtent.depth));
          VKCTX(CmdCopyBufferToImage)(cmdbuf->vk, buf->obj->buffer, use_img->obj->image, use_img->layout, 1, &region);
+         cmdbuf->has_work = true;
       } else {
          marker = zink_cmd_debug_marker_begin(ctx, cmdbuf, "copy_image2buffer(%s, %dx%dx%d)",
                                                    util_format_short_name(src->base.b.format),
@@ -4691,6 +4698,7 @@ zink_copy_image_buffer(struct zink_context *ctx, struct zink_resource *dst, stru
                                                    region.imageExtent.height,
                                                    MAX2(region.imageSubresource.layerCount, region.imageExtent.depth));
          VKCTX(CmdCopyImageToBuffer)(cmdbuf->vk, use_img->obj->image, use_img->layout, buf->obj->buffer, 1, &region);
+         cmdbuf->has_work = true;
       }
       zink_cmd_debug_marker_end(ctx, cmdbuf, marker);
    }
@@ -4831,6 +4839,7 @@ zink_resource_copy_region(struct pipe_context *pctx,
                                    VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
                                    VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
                                    0, 1, &mb, 0, NULL, 0, NULL);
+         cmdbuf->has_work = true;
       }
       bool marker = zink_cmd_debug_marker_begin(ctx, cmdbuf, "copy_image(%s->%s, %dx%dx%d)",
                                                 util_format_short_name(psrc->format),
@@ -4841,6 +4850,7 @@ zink_resource_copy_region(struct pipe_context *pctx,
       VKCTX(CmdCopyImage)(cmdbuf->vk, src->obj->image, src->layout,
                      dst->obj->image, dst->layout,
                      1, &region);
+      cmdbuf->has_work = true;
       zink_cmd_debug_marker_end(ctx, cmdbuf, marker);
    } else if (dst->base.b.target == PIPE_BUFFER &&
               src->base.b.target == PIPE_BUFFER) {
@@ -5238,6 +5248,7 @@ zink_flush_dgc(struct zink_context *ctx)
          0
       };
       VKCTX(CmdExecuteGeneratedCommandsNV)(ctx->batch.state->main_cmdbuf.vk, VK_FALSE, &gen);
+      ctx->batch.state->main_cmdbuf.has_work = true;
 
       pipe_resource_reference(&pres, NULL);
    }

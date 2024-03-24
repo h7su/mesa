@@ -356,6 +356,7 @@ struct emit_memory_barrier {
           0, NULL,
           1, &imb
           );
+      cmdbuf->has_work = true;
    }
 
    static void for_buffer(struct zink_context *ctx, struct zink_resource *res,
@@ -384,6 +385,7 @@ struct emit_memory_barrier {
           1, &bmb,
           0, NULL,
           0, NULL);
+      cmdbuf->has_work = true;
    }
 };
 
@@ -419,6 +421,7 @@ struct emit_memory_barrier<barrier_KHR_synchronzation2> {
          &imb
          };
       VKCTX(CmdPipelineBarrier2)(cmdbuf->vk, &dep);
+      cmdbuf->has_work = true;
    }
 
    static void for_buffer(struct zink_context *ctx, struct zink_resource *res,
@@ -453,6 +456,7 @@ struct emit_memory_barrier<barrier_KHR_synchronzation2> {
           NULL
       };
       VKCTX(CmdPipelineBarrier2)(cmdbuf->vk, &dep);
+      cmdbuf->has_work = true;
    }
 };
 
