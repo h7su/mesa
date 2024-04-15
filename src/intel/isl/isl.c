@@ -1118,6 +1118,7 @@ isl_surf_choose_tiling(const struct isl_device *dev,
 
    if (intel_needs_workaround(dev->info, 22015614752) &&
        _isl_surf_info_supports_ccs(dev, info->format, info->usage) &&
+       (info->usage & ISL_SURF_USAGE_MULTI_ENGINE_PAR_BIT) &&
        (info->levels > 1 || info->depth > 1 || info->array_len > 1)) {
       /* There are issues with multiple engines accessing the same CCS
        * cacheline in parallel. This can happen if this image has multiple
@@ -1724,6 +1725,7 @@ isl_choose_miptail_start_level(const struct isl_device *dev,
       return 15;
 
    if (intel_needs_workaround(dev->info, 22015614752) &&
+       (info->usage & ISL_SURF_USAGE_MULTI_ENGINE_PAR_BIT) &&
        _isl_surf_info_supports_ccs(dev, info->format, info->usage)) {
       /* There are issues with multiple engines accessing the same CCS
        * cacheline in parallel. If we're here, Tile64 is use, providing enough
@@ -2711,7 +2713,9 @@ isl_calc_base_alignment(const struct isl_device *dev,
           *     It is expressed in terms of number of 256B block of CCS, where
           *     each 256B block of CCS corresponds to 64KB of main surface."
           */
-         if (intel_needs_workaround(dev->info, 22015614752)) {
+         if (intel_needs_workaround(dev->info, 22015614752) &&
+             (info->usage & (ISL_SURF_USAGE_MULTI_ENGINE_SEQ_BIT |
+                             ISL_SURF_USAGE_MULTI_ENGINE_PAR_BIT))) {
             base_alignment_B = MAX(base_alignment_B,
                                    256 /* cacheline */ * 256 /* AUX ratio */);
          }
@@ -3103,8 +3107,10 @@ isl_surf_supports_ccs(const struct isl_device *dev,
           *
           * Let's just disable CCS instead.
           */
-         if (surf->dim == ISL_SURF_DIM_3D)
+         if ((surf->usage & ISL_SURF_USAGE_MULTI_ENGINE_PAR_BIT) &&
+             surf->dim == ISL_SURF_DIM_3D) {
             return false;
+         }
       } else if (isl_surf_usage_is_depth(surf->usage)) {
          const struct isl_surf *hiz_surf = hiz_or_mcs_surf;
 
@@ -3124,8 +3130,10 @@ isl_surf_supports_ccs(const struct isl_device *dev,
           *
           * Let's just disable CCS instead.
           */
-         if (surf->dim == ISL_SURF_DIM_3D)
+         if ((surf->usage & ISL_SURF_USAGE_MULTI_ENGINE_PAR_BIT) &&
+             surf->dim == ISL_SURF_DIM_3D) {
             return false;
+         }
 
          assert(hiz_surf->usage & ISL_SURF_USAGE_HIZ_BIT);
          assert(hiz_surf->tiling == ISL_TILING_HIZ);
@@ -3151,6 +3159,7 @@ isl_surf_supports_ccs(const struct isl_device *dev,
          return false;
 
       if (intel_needs_workaround(dev->info, 22015614752) &&
+          (surf->usage & ISL_SURF_USAGE_MULTI_ENGINE_PAR_BIT) &&
           (surf->levels > 1 ||
            surf->logical_level0_px.depth > 1 ||
            surf->logical_level0_px.array_len > 1)) {
