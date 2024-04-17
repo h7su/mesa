@@ -36,6 +36,8 @@
 #include "brw_ir_performance.h"
 #include "compiler/nir/nir.h"
 
+#include <vector>
+
 struct bblock_t;
 namespace {
    struct acp_entry;
@@ -201,6 +203,17 @@ enum instruction_scheduler_mode {
 };
 
 class instruction_scheduler;
+
+struct pull_constant_range {
+   /* Offset in bytes at which constants are pull from the general state base
+    * offset passed in R0.0
+    */
+   uint32_t offset_B;
+   /* Length in bytes of constants to be loaded in registers (aligned to a
+    * dword)
+    */
+   uint32_t length_B;
+};
 
 /**
  * The fragment shader front-end.
@@ -440,6 +453,9 @@ public:
 
    /* The API selected subgroup size */
    unsigned api_subgroup_size; /**< 0, 8, 16, 32 */
+
+   /* Constants ranges pulled by the shader */
+   std::vector<struct pull_constant_range> pull_constant_ranges;
 
    struct shader_stats shader_stats;
 

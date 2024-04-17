@@ -35,6 +35,7 @@
 #include "brw_nir.h"
 #include "brw_cfg.h"
 #include "brw_private.h"
+#include "brw_rt.h"
 #include "intel_nir.h"
 #include "shader_enums.h"
 #include "dev/intel_debug.h"
@@ -44,6 +45,7 @@
 #include "util/u_math.h"
 
 #include <memory>
+#include <vector>
 
 using namespace brw;
 
@@ -1087,6 +1089,7 @@ fs_visitor::import_uniforms(fs_visitor *v)
 {
    this->push_constant_loc = v->push_constant_loc;
    this->uniforms = v->uniforms;
+   this->pull_constant_ranges = v->pull_constant_ranges;
 }
 
 enum brw_barycentric_mode
@@ -1222,7 +1225,7 @@ fs_visitor::assign_curb_setup()
    unsigned ubo_push_start[4];
    for (int i = 0; i < 4; i++) {
       ubo_push_start[i] = 8 * (ubo_push_length + uniform_push_length);
-      ubo_push_length += DIV_ROUND_UP(prog_data->ubo_ranges[i].length_B, 32);
+      ubo_push_length += DIV_ROUND_UP(prog_data->ubo_ranges[i].length_B, REG_SIZE * reg_unit(devinfo));
 
       assert(ubo_push_start[i] % (8 * reg_unit(devinfo)) == 0);
       assert(ubo_push_length % (1 * reg_unit(devinfo)) == 0);
@@ -1243,30 +1246,38 @@ fs_visitor::assign_curb_setup()
       assert(uniform_push_length <= reg_unit(devinfo));
    } else if (is_compute && devinfo->verx10 >= 125) {
       assert(devinfo->has_lsc);
+      assert(gl_shader_stage_is_compute(stage) ||
+             gl_shader_stage_is_mesh(stage) ||
+             gl_shader_stage_is_rt(stage));
       fs_builder ubld = fs_builder(this, 1).exec_all().at(
          cfg->first_block(), cfg->first_block()->start());
 
-      /* The base offset for our push data is passed in as R0.0[31:6]. We have
-       * to mask off the bottom 6 bits.
+      /* The base offset for our push data is passed in as R0.0[31:6]. We
+       * have to mask off the bottom 6 bits.
        */
       fs_reg base_addr =
          ubld.AND(retype(brw_vec1_grf(0, 0), BRW_TYPE_UD),
                   brw_imm_ud(INTEL_MASK(31, 6)));
 
-      /* On Gfx12-HP we load constants at the start of the program using A32
-       * stateless messages.
+      /* For RT stages the address is a pointer to RT_DISPATCH_GLOBALS, the
+       * push constants are located behind that data so we have to apply to
+       * additional push_constants_offset. For all the other stages, the
+       * driver offsets the address/offset such that we can always loads from
+       * offset 0.
        */
-      for (unsigned i = 0; i < uniform_push_length;) {
-         /* Limit ourselves to LSC HW limit of 8 GRFs (256bytes D32V64). */
-         unsigned num_regs = MIN2(uniform_push_length - i, 8);
-         assert(num_regs > 0);
-         num_regs = 1 << util_logbase2(num_regs);
+      unsigned base_addr_offset_B =
+         (gl_shader_stage_is_rt(stage) ? BRW_RT_PUSH_CONST_OFFSET : 0);
 
-         /* This pass occurs after all of the optimization passes, so don't
-          * emit an 'ADD addr, base_addr, 0' instruction.
-          */
-         fs_reg addr = i == 0 ? base_addr :
-            ubld.ADD(base_addr, brw_imm_ud(i * REG_SIZE));
+      /* Do the loading with either A32 or A64 LSC messages */
+      for (unsigned i = 0, r = 0; i < pull_constant_ranges.size(); i++) {
+         const struct pull_constant_range &range = pull_constant_ranges[i];
+         fs_reg addr;
+
+         if (range.offset_B != 0 || base_addr_offset_B != 0) {
+            addr = ubld.ADD(base_addr, brw_imm_ud(range.offset_B));
+         } else {
+            addr = base_addr;
+         }
 
          fs_reg srcs[4] = {
             brw_imm_ud(0), /* desc */
@@ -1275,7 +1286,7 @@ fs_visitor::assign_curb_setup()
             fs_reg(),      /* payload2 */
          };
 
-         fs_reg dest = retype(brw_vec8_grf(payload().num_regs + i, 0),
+         fs_reg dest = retype(brw_vec8_grf(payload().num_regs + r, 0),
                               BRW_TYPE_UD);
          fs_inst *send = ubld.emit(SHADER_OPCODE_SEND, dest, srcs, 4);
 
@@ -1284,16 +1295,15 @@ fs_visitor::assign_curb_setup()
                                    LSC_ADDR_SURFTYPE_FLAT,
                                    LSC_ADDR_SIZE_A32,
                                    LSC_DATA_SIZE_D32,
-                                   num_regs * 8 /* num_channels */,
+                                   range.length_B / 4 /* num_channels */,
                                    true /* transpose */,
                                    LSC_CACHE(devinfo, LOAD, L1C_L3C));
          send->header_size = 0;
          send->mlen = lsc_msg_addr_len(devinfo, LSC_ADDR_SIZE_A32, 1);
-         send->size_written =
-            lsc_msg_dest_len(devinfo, LSC_DATA_SIZE_D32, num_regs * 8) * REG_SIZE;
+         send->size_written = align(range.length_B, REG_SIZE);
          send->send_is_volatile = true;
 
-         i += num_regs;
+         r += DIV_ROUND_UP(range.length_B, REG_SIZE * reg_unit(devinfo));
       }
 
       invalidate_analysis(DEPENDENCY_INSTRUCTIONS);
@@ -1373,6 +1383,9 @@ fs_visitor::assign_curb_setup()
 
       invalidate_analysis(DEPENDENCY_INSTRUCTIONS);
    }
+
+   if (prog_data->curb_read_length)
+      debug_optimizer(nir, "assign_curb_setup", 90, 90);
 
    /* This may be updated in assign_urb_setup or assign_vs_urb_setup. */
    this->first_non_payload_grf = payload().num_regs + prog_data->curb_read_length;
@@ -1949,6 +1962,81 @@ brw_get_subgroup_id_param_index(const intel_device_info *devinfo,
    return -1;
 }
 
+static std::vector<struct pull_constant_range>
+get_push_constant_access_ranges(const struct intel_device_info *devinfo,
+                                const nir_shader *nir,
+                                nir_intrinsic_op intrinsic)
+{
+   /* Build a bitfield of used uniforms so that we can pack the push constant
+    * loads.
+    */
+   BITSET_DECLARE(push_constant_dwords, XE2_MAX_GRF * 8);
+   BITSET_ZERO(push_constant_dwords);
+
+   nir_foreach_function_impl(impl, nir) {
+      nir_foreach_block(block, impl) {
+         nir_foreach_instr(instr, block) {
+            if (instr->type != nir_instr_type_intrinsic)
+               continue;
+
+            nir_intrinsic_instr *intrin = nir_instr_as_intrinsic(instr);
+            if (intrin->intrinsic != intrinsic)
+               continue;
+
+            uint32_t base, len;
+            if (nir_src_is_const(intrin->src[0])) {
+               base = nir_intrinsic_base(intrin) + nir_src_as_uint(intrin->src[0]);
+               len  = intrin->def.num_components * intrin->def.bit_size / 8;
+            } else {
+               base = nir_intrinsic_base(intrin);
+               len  = nir_intrinsic_range(intrin);
+            }
+
+            BITSET_SET_RANGE(push_constant_dwords,
+                             DIV_ROUND_UP(base, 4),
+                             DIV_ROUND_UP(base + len - 1, 4));
+         }
+      }
+   }
+
+   /* Limit ourselves to LSC HW limit of 256bytes D32V64. */
+   const uint32_t max_pull_load_B = 256;
+   /* The LSC is loading entire GRFs, if we have uniforms further apart than a
+    * GRF size we should split them in different ranges. This avoid register
+    * file fragmentation due to unused payloads.
+    */
+   const uint32_t grf_size = REG_SIZE * reg_unit(devinfo);
+
+   std::vector<struct pull_constant_range> ranges;
+   struct pull_constant_range current_range = {};
+   int dword;
+   BITSET_FOREACH_SET(dword, push_constant_dwords, XE2_MAX_GRF * 8) {
+      if (current_range.length_B == 0) {
+         current_range.offset_B = dword * 4;
+         current_range.length_B = 4;
+         continue;
+      }
+
+      if (dword * 4 - current_range.offset_B < max_pull_load_B &&
+          dword * 4 - (current_range.offset_B + current_range.length_B) < grf_size) {
+         current_range.length_B = dword * 4 - current_range.offset_B;
+         continue;
+      }
+
+      current_range.length_B = 1u << util_last_bit(current_range.length_B);
+      ranges.push_back(current_range);
+
+      current_range.offset_B = dword * 4;
+      current_range.length_B = 4;
+   }
+   if (current_range.length_B > 0) {
+      current_range.length_B = 1u << util_last_bit(current_range.length_B);
+      ranges.push_back(current_range);
+   }
+
+   return ranges;
+}
+
 /**
  * Assign UNIFORM file registers to either push constants or pull constants.
  *
@@ -1965,9 +2053,42 @@ fs_visitor::assign_constant_locations()
    if (push_constant_loc)
       return;
 
-   push_constant_loc = ralloc_array(mem_ctx, int, uniforms);
-   for (unsigned u = 0; u < uniforms; u++)
-      push_constant_loc[u] = u;
+   /* Compute the push constant locations.
+    *
+    * On Gfx12.5+, some stages can pick fewer/smaller chunks of data from the
+    * push constant range, based one what ranges are being used and pack the
+    * data into as few GRFs are as possible.
+    */
+   if (devinfo->verx10 >= 125 &&
+       (gl_shader_stage_is_compute(stage) ||
+        gl_shader_stage_is_mesh(stage) ||
+        gl_shader_stage_is_rt(stage))) {
+      /* Build a bitfield of used uniforms so that we can pack the push
+       * constant loads.
+       */
+      std::vector<struct pull_constant_range> r;
+      r = get_push_constant_access_ranges(devinfo, nir,
+                                          nir_intrinsic_load_uniform);
+      pull_constant_ranges.insert(pull_constant_ranges.end(), r.begin(), r.end());
+
+      push_constant_loc = rzalloc_array(mem_ctx, int, uniforms);
+      /* Build a map of uniforms */
+      for (unsigned i = 0, offset = 0; i < pull_constant_ranges.size(); i++) {
+         const struct pull_constant_range &r = pull_constant_ranges[i];
+         for (unsigned u = 0; u < r.length_B / 4; u++) {
+            unsigned uniform = r.offset_B / 4 + u;
+            if (uniform >= uniforms)
+               continue;
+            push_constant_loc[uniform] = offset / 4 + u;
+         }
+         offset += r.length_B;
+      }
+   } else {
+      push_constant_loc = rzalloc_array(mem_ctx, int, uniforms);
+      for (unsigned u = 0; u < uniforms; u++) {
+         push_constant_loc[u] = u;
+      }
+   }
 
    /* Now that we know how many regular uniforms we'll push, reduce the
     * UBO push ranges so we don't exceed the 3DSTATE_CONSTANT limits.
@@ -2845,7 +2966,7 @@ fs_visitor::allocate_registers(bool allow_spilling)
    if (needs_register_pressure)
       shader_stats.max_register_pressure = compute_max_register_pressure();
 
-   debug_optimizer(nir, "pre_register_allocate", 90, 90);
+   debug_optimizer(nir, "pre_register_allocate", 91, 90);
 
    bool spill_all = allow_spilling && INTEL_DEBUG(DEBUG_SPILL_FS);
 
@@ -3361,6 +3482,8 @@ fs_visitor::run_bs(bool allow_spilling)
    calculate_cfg();
 
    brw_fs_optimize(*this);
+
+   brw_bs_prog_data(prog_data)->base.nr_params = this->uniforms;
 
    assign_curb_setup();
 
