@@ -44,7 +44,7 @@ anv_nir_compute_push_layout(nir_shader *nir,
    memset(map->push_ranges, 0, sizeof(map->push_ranges));
 
    bool has_const_ubo = false;
-   unsigned push_start = UINT_MAX, push_end = 0;
+   unsigned push_start = UINT32_MAX, push_end = 0;
    nir_foreach_function_impl(impl, nir) {
       nir_foreach_block(block, impl) {
          nir_foreach_instr(instr, block) {
@@ -116,22 +116,28 @@ anv_nir_compute_push_layout(nir_shader *nir,
       push_end = anv_drv_const_offset(cs.subgroup_id);
    }
 
-   /* Align push_start down to a 32B boundary and make it no larger than
-    * push_end (no push constants is indicated by push_start = UINT_MAX).
+   /* Align push_start down to the push constant alignment and make it no
+    * larger than push_end (no push constants is indicated by push_start =
+    * UINT_MAX).
     */
+   const uint32_t push_constant_align =
+      brw_shader_stage_push_constant_alignment(devinfo, nir->info.stage);
    push_start = MIN2(push_start, push_end);
-   push_start = ROUND_DOWN_TO(push_start, 32);
+   push_start = ROUND_DOWN_TO(push_start, push_constant_align);
+
+   const unsigned base_push_offset =
+      gl_shader_stage_is_rt(nir->info.stage) ? 0 : push_start;
 
    /* For scalar, push data size needs to be aligned to a DWORD. */
    const unsigned alignment = 4;
-   nir->num_uniforms = ALIGN(push_end - push_start, alignment);
+   nir->num_uniforms = ALIGN(push_end - base_push_offset, alignment);
    prog_data->nr_params = nir->num_uniforms / 4;
    prog_data->param = rzalloc_array(mem_ctx, uint32_t, prog_data->nr_params);
 
    struct anv_push_range push_constant_range = {
       .set = ANV_DESCRIPTOR_SET_PUSH_CONSTANTS,
       .start_B = push_start,
-      .length_B = align(push_end - push_start, 32),
+      .length_B = align(push_end - push_start, push_constant_align),
    };
 
    if (has_push_intrinsic) {
@@ -144,18 +150,9 @@ anv_nir_compute_push_layout(nir_shader *nir,
                nir_intrinsic_instr *intrin = nir_instr_as_intrinsic(instr);
                switch (intrin->intrinsic) {
                case nir_intrinsic_load_push_constant: {
-                  /* With bindless shaders we load uniforms with SEND
-                   * messages. All the push constants are located after the
-                   * RT_DISPATCH_GLOBALS. We just need to add the offset to
-                   * the address right after RT_DISPATCH_GLOBALS (see
-                   * brw_nir_lower_rt_intrinsics.c).
-                   */
-                  unsigned base_offset =
-                     brw_shader_stage_requires_bindless_resources(nir->info.stage) ? 0 : push_start;
                   intrin->intrinsic = nir_intrinsic_load_uniform;
                   nir_intrinsic_set_base(intrin,
-                                         nir_intrinsic_base(intrin) -
-                                         base_offset);
+                                         nir_intrinsic_base(intrin) - base_push_offset);
                   break;
                }
 

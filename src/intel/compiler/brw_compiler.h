@@ -160,6 +160,21 @@ brw_shader_stage_requires_bindless_resources(gl_shader_stage stage)
    return brw_shader_stage_is_bindless(stage) || gl_shader_stage_is_mesh(stage);
 }
 
+static inline uint32_t
+brw_shader_stage_push_constant_alignment(const struct intel_device_info *devinfo,
+                                         gl_shader_stage stage)
+{
+   if (devinfo->verx10 < 125)
+      return 32;
+
+   if (gl_shader_stage_is_compute(stage) ||
+       gl_shader_stage_is_mesh(stage) ||
+       gl_shader_stage_is_rt(stage))
+      return 4;
+
+   return 32;
+}
+
 /**
  * Program key structures.
  *

@@ -504,6 +504,7 @@ populate_task_prog_key(struct anv_pipeline_stage *stage,
    memset(&stage->key, 0, sizeof(stage->key));
 
    populate_base_prog_key(stage, device);
+   stage->key.task.base.uses_inline_push_addr = true;
 }
 
 static void
@@ -515,6 +516,7 @@ populate_mesh_prog_key(struct anv_pipeline_stage *stage,
 
    populate_base_prog_key(stage, device);
 
+   stage->key.mesh.base.uses_inline_push_addr = true;
    stage->key.mesh.compact_mue = compact_mue;
 }
 
@@ -629,6 +631,7 @@ populate_cs_prog_key(struct anv_pipeline_stage *stage,
    memset(&stage->key, 0, sizeof(stage->key));
 
    populate_base_prog_key(stage, device);
+   stage->key.task.base.uses_inline_push_addr = true;
 }
 
 static void
@@ -640,6 +643,7 @@ populate_bs_prog_key(struct anv_pipeline_stage *stage,
 
    populate_base_prog_key(stage, device);
 
+   stage->key.bs.base.uses_inline_push_addr = true;
    stage->key.bs.pipeline_ray_flags = ray_flags;
    stage->key.bs.pipeline_ray_flags = ray_flags;
 }

@@ -1796,12 +1796,8 @@ emit_task_state(struct anv_graphics_pipeline *pipeline)
       task.PreferredSLMAllocationSize        =
          preferred_slm_allocation_size(devinfo);
 
-      /*
-       * 3DSTATE_TASK_SHADER_DATA.InlineData[0:1] will be used for an address
-       * of a buffer with push constants and descriptor set table and
-       * InlineData[2:7] will be used for first few push constants.
-       */
-      task.EmitInlineParameter = true;
+      task.EmitInlineParameter               =
+         task_prog_data->base.uses_inline_push_addr;
 
       task.XP0Required = task_prog_data->uses_drawid;
    }
@@ -1877,12 +1873,8 @@ emit_mesh_state(struct anv_graphics_pipeline *pipeline)
       mesh.PreferredSLMAllocationSize        =
          preferred_slm_allocation_size(devinfo);
 
-      /*
-       * 3DSTATE_MESH_SHADER_DATA.InlineData[0:1] will be used for an address
-       * of a buffer with push constants and descriptor set table and
-       * InlineData[2:7] will be used for first few push constants.
-       */
-      mesh.EmitInlineParameter = true;
+      mesh.EmitInlineParameter               =
+         mesh_prog_data->base.uses_inline_push_addr;
 
       mesh.XP0Required = mesh_prog_data->uses_drawid;
    }

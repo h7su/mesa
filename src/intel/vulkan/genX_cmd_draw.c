@@ -586,16 +586,13 @@ cmd_buffer_flush_mesh_inline_data(struct anv_cmd_buffer *cmd_buffer,
       anv_batch_emit(&cmd_buffer->batch, GENX(3DSTATE_TASK_SHADER_DATA), data) {
          const struct anv_push_range *range = &bind_map->push_ranges[0];
          if (range->length_B > 0) {
-            struct anv_address buffer =
-               get_push_range_address(cmd_buffer, shader, range);
+            struct anv_address buffer = anv_address_add(
+               get_push_range_address(cmd_buffer, shader, range),
+               range->start_B);
 
             uint64_t addr = anv_address_physical(buffer);
             data.InlineData[0] = addr & 0xffffffff;
             data.InlineData[1] = addr >> 32;
-
-            memcpy(&data.InlineData[BRW_TASK_MESH_PUSH_CONSTANTS_START_DW],
-                   cmd_buffer->state.gfx.base.push_constants.client_data,
-                   BRW_TASK_MESH_PUSH_CONSTANTS_SIZE_DW * 4);
          }
       }
    }
@@ -609,16 +606,13 @@ cmd_buffer_flush_mesh_inline_data(struct anv_cmd_buffer *cmd_buffer,
       anv_batch_emit(&cmd_buffer->batch, GENX(3DSTATE_MESH_SHADER_DATA), data) {
          const struct anv_push_range *range = &bind_map->push_ranges[0];
          if (range->length_B > 0) {
-            struct anv_address buffer =
-               get_push_range_address(cmd_buffer, shader, range);
+            struct anv_address buffer = anv_address_add(
+               get_push_range_address(cmd_buffer, shader, range),
+               range->start_B);
 
             uint64_t addr = anv_address_physical(buffer);
             data.InlineData[0] = addr & 0xffffffff;
             data.InlineData[1] = addr >> 32;
-
-            memcpy(&data.InlineData[BRW_TASK_MESH_PUSH_CONSTANTS_START_DW],
-                   cmd_buffer->state.gfx.base.push_constants.client_data,
-                   BRW_TASK_MESH_PUSH_CONSTANTS_SIZE_DW * 4);
          }
       }
    }

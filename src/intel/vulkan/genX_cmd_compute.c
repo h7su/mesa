@@ -289,6 +289,15 @@ get_interface_descriptor_data(struct anv_cmd_buffer *cmd_buffer,
    };
 }
 
+static inline struct anv_address
+get_push_constants_address(struct anv_cmd_buffer *cmd_buffer,
+                           const struct anv_shader_bin *shader)
+{
+   struct anv_cmd_compute_state *comp_state = &cmd_buffer->state.compute;
+   return anv_state_pool_state_address(&cmd_buffer->device->general_state_pool,
+                                       comp_state->base.push_constants_state);
+}
+
 static inline void
 emit_indirect_compute_walker(struct anv_cmd_buffer *cmd_buffer,
                              const struct anv_shader_bin *shader,
@@ -298,7 +307,6 @@ emit_indirect_compute_walker(struct anv_cmd_buffer *cmd_buffer,
    const struct intel_device_info *devinfo = cmd_buffer->device->info;
    assert(devinfo->has_indirect_unroll);
 
-   struct anv_cmd_compute_state *comp_state = &cmd_buffer->state.compute;
    bool predicate = cmd_buffer->state.conditional_render_enabled;
 
    const struct intel_cs_dispatch_info dispatch =
@@ -308,8 +316,6 @@ emit_indirect_compute_walker(struct anv_cmd_buffer *cmd_buffer,
    struct GENX(COMPUTE_WALKER_BODY) body =  {
       .SIMDSize                 = dispatch_size,
       .MessageSIMD              = dispatch_size,
-      .IndirectDataStartAddress = comp_state->base.push_constants_state.offset,
-      .IndirectDataLength       = comp_state->base.push_constants_state.alloc_size,
       .LocalXMaximum            = prog_data->local_size[0] - 1,
       .LocalYMaximum            = prog_data->local_size[1] - 1,
       .LocalZMaximum            = prog_data->local_size[2] - 1,
@@ -318,7 +324,12 @@ emit_indirect_compute_walker(struct anv_cmd_buffer *cmd_buffer,
       .InterfaceDescriptor =
          get_interface_descriptor_data(cmd_buffer, shader, prog_data,
                                        &dispatch),
+      .EmitInlineParameter      = prog_data->uses_inline_push_addr,
    };
+
+   uint64_t push_addr = anv_address_physical(
+      get_push_constants_address(cmd_buffer, shader));
+   memcpy(body.InlineData, &push_addr, sizeof(push_addr));
 
    cmd_buffer->last_indirect_dispatch =
       anv_batch_emitn(
@@ -341,7 +352,6 @@ emit_compute_walker(struct anv_cmd_buffer *cmd_buffer,
                     uint32_t groupCountX, uint32_t groupCountY,
                     uint32_t groupCountZ)
 {
-   const struct anv_cmd_compute_state *comp_state = &cmd_buffer->state.compute;
    const bool predicate = cmd_buffer->state.conditional_render_enabled;
 
    const struct intel_device_info *devinfo = pipeline->base.device->info;
@@ -349,38 +359,46 @@ emit_compute_walker(struct anv_cmd_buffer *cmd_buffer,
       brw_cs_get_dispatch_info(devinfo, prog_data, NULL);
 
    cmd_buffer->last_compute_walker =
-      anv_batch_emitn(
-         &cmd_buffer->batch,
-         GENX(COMPUTE_WALKER_length),
-         GENX(COMPUTE_WALKER),
-         .IndirectParameterEnable        = indirect,
-         .PredicateEnable                = predicate,
-         .SIMDSize                       = dispatch.simd_size / 16,
-         .MessageSIMD                    = dispatch.simd_size / 16,
-         .IndirectDataStartAddress       = comp_state->base.push_constants_state.offset,
-         .IndirectDataLength             = comp_state->base.push_constants_state.alloc_size,
+      anv_batch_emit_dwords(&cmd_buffer->batch,
+                            GENX(COMPUTE_WALKER_length));
+
+
+   struct GENX(COMPUTE_WALKER) walker =  {
+      GENX(COMPUTE_WALKER_header),
+      .IndirectParameterEnable        = indirect,
+      .PredicateEnable                = predicate,
+      .SIMDSize                       = dispatch.simd_size / 16,
+      .MessageSIMD                    = dispatch.simd_size / 16,
 #if GFX_VERx10 == 125
-         .SystolicModeEnable             = prog_data->uses_systolic,
+      .SystolicModeEnable             = prog_data->uses_systolic,
 #endif
-         .GenerateLocalID                = prog_data->generate_local_id != 0,
-         .EmitLocal                      = prog_data->generate_local_id,
-         .WalkOrder                      = prog_data->walk_order,
-         .TileLayout = prog_data->walk_order == INTEL_WALK_ORDER_YXZ ?
-                       TileY32bpe : Linear,
-         .LocalXMaximum                  = prog_data->local_size[0] - 1,
-         .LocalYMaximum                  = prog_data->local_size[1] - 1,
-         .LocalZMaximum                  = prog_data->local_size[2] - 1,
-         .ThreadGroupIDXDimension        = groupCountX,
-         .ThreadGroupIDYDimension        = groupCountY,
-         .ThreadGroupIDZDimension        = groupCountZ,
-         .ExecutionMask                  = dispatch.right_mask,
-         .PostSync                       = {
-            .MOCS                        = anv_mocs(pipeline->base.device, NULL, 0),
-         },
-         .InterfaceDescriptor =
-            get_interface_descriptor_data(cmd_buffer, pipeline->cs,
-                                          prog_data, &dispatch),
-      );
+      .GenerateLocalID                = prog_data->generate_local_id != 0,
+      .EmitLocal                      = prog_data->generate_local_id,
+      .WalkOrder                      = prog_data->walk_order,
+      .TileLayout = prog_data->walk_order == INTEL_WALK_ORDER_YXZ ?
+      TileY32bpe : Linear,
+      .LocalXMaximum                  = prog_data->local_size[0] - 1,
+      .LocalYMaximum                  = prog_data->local_size[1] - 1,
+      .LocalZMaximum                  = prog_data->local_size[2] - 1,
+      .ThreadGroupIDXDimension        = groupCountX,
+      .ThreadGroupIDYDimension        = groupCountY,
+      .ThreadGroupIDZDimension        = groupCountZ,
+      .ExecutionMask                  = dispatch.right_mask,
+      .PostSync                       = {
+         .MOCS                        = anv_mocs(pipeline->base.device, NULL, 0),
+      },
+      .InterfaceDescriptor =
+         get_interface_descriptor_data(cmd_buffer, pipeline->cs,
+                                       prog_data, &dispatch),
+      .EmitInlineParameter            = prog_data->uses_inline_push_addr,
+   };
+
+   uint64_t push_addr = anv_address_physical(
+      get_push_constants_address(cmd_buffer, pipeline->cs));
+   memcpy(walker.InlineData, &push_addr, sizeof(push_addr));
+
+   GENX(COMPUTE_WALKER_pack)(&cmd_buffer->batch,
+                             cmd_buffer->last_compute_walker, &walker);
 }
 
 #else /* #if GFX_VERx10 >= 125 */
