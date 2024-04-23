@@ -1138,7 +1138,8 @@ update_separable(struct zink_context *ctx, struct zink_program *pg)
       bs->dd.db_offset += zs->precompile.db_size;
       /* TODO: maybe compile multiple variants for different set counts for compact mode? */
       int set_idx = screen->info.have_EXT_shader_object ? j : j == MESA_SHADER_FRAGMENT;
-      VKCTX(CmdSetDescriptorBufferOffsetsEXT)(bs->cmdbuf, VK_PIPELINE_BIND_POINT_GRAPHICS, pg->layout, set_idx, 1, &use_buffer, &offset);
+
+      VKCTX(CmdSetDescriptorBufferOffsetsEXT)(bs->main_cmdbuf.vk, VK_PIPELINE_BIND_POINT_GRAPHICS, pg->layout, set_idx, 1, &use_buffer, &offset);
    }
 }
 
@@ -1209,7 +1210,7 @@ zink_descriptors_update_masked_buffer(struct zink_context *ctx, bool is_compute,
       /* templates are indexed by the set id, so increment type by 1
          * (this is effectively an optimization of indirecting through screen->desc_set_id)
          */
-      VKCTX(CmdSetDescriptorBufferOffsetsEXT)(bs->cmdbuf,
+      VKCTX(CmdSetDescriptorBufferOffsetsEXT)(bs->main_cmdbuf.vk,
                                                 is_compute ? VK_PIPELINE_BIND_POINT_COMPUTE : VK_PIPELINE_BIND_POINT_GRAPHICS,
                                                 pg->layout,
                                                 type + 1, 1,
@@ -1247,7 +1248,7 @@ zink_descriptors_update_masked(struct zink_context *ctx, bool is_compute, uint8_
           * (this is effectively an optimization of indirecting through screen->desc_set_id)
           */
          VKSCR(UpdateDescriptorSetWithTemplate)(screen->dev, desc_sets[type], pg->dd.templates[type + 1], ctx);
-         VKSCR(CmdBindDescriptorSets)(bs->cmdbuf,
+         VKSCR(CmdBindDescriptorSets)(bs->main_cmdbuf.vk,
                                  is_compute ? VK_PIPELINE_BIND_POINT_COMPUTE : VK_PIPELINE_BIND_POINT_GRAPHICS,
                                  /* same set indexing as above */
                                  pg->layout, type + 1, 1, &desc_sets[type],
@@ -1264,7 +1265,7 @@ zink_descriptors_update_masked(struct zink_context *ctx, bool is_compute, uint8_
       /* same set indexing as above */
       assert(bs->dd.sets[is_compute][type + 1]);
       zink_flush_dgc_if_enabled(ctx);
-      VKSCR(CmdBindDescriptorSets)(bs->cmdbuf,
+      VKSCR(CmdBindDescriptorSets)(bs->main_cmdbuf.vk,
                               is_compute ? VK_PIPELINE_BIND_POINT_COMPUTE : VK_PIPELINE_BIND_POINT_GRAPHICS,
                               /* same set indexing as above */
                               pg->layout, type + 1, 1, &bs->dd.sets[is_compute][type + 1],
@@ -1279,7 +1280,7 @@ bind_bindless_db(struct zink_context *ctx, struct zink_program *pg)
    struct zink_screen *screen = zink_screen(ctx->base.screen);
    unsigned index = 1;
    VkDeviceSize offset = 0;
-   VKCTX(CmdSetDescriptorBufferOffsetsEXT)(bs->cmdbuf,
+   VKCTX(CmdSetDescriptorBufferOffsetsEXT)(bs->main_cmdbuf.vk,
                                            pg->is_compute ? VK_PIPELINE_BIND_POINT_COMPUTE : VK_PIPELINE_BIND_POINT_GRAPHICS,
                                            pg->layout,
                                            screen->desc_set_id[ZINK_DESCRIPTOR_BINDLESS], 1,
@@ -1403,7 +1404,7 @@ zink_descriptors_update(struct zink_context *ctx, bool is_compute)
             bs->dd.db_offset += ctx->dd.db_size[is_compute];
          }
          zink_flush_dgc_if_enabled(ctx);
-         VKCTX(CmdSetDescriptorBufferOffsetsEXT)(bs->cmdbuf,
+         VKCTX(CmdSetDescriptorBufferOffsetsEXT)(bs->main_cmdbuf.vk,
                                                  is_compute ? VK_PIPELINE_BIND_POINT_COMPUTE : VK_PIPELINE_BIND_POINT_GRAPHICS,
                                                  pg->layout,
                                                  0, 1,
@@ -1415,7 +1416,7 @@ zink_descriptors_update(struct zink_context *ctx, bool is_compute)
          }
          if (have_KHR_push_descriptor) {
             if (ctx->dd.push_state_changed[is_compute])
-               VKCTX(CmdPushDescriptorSetWithTemplateKHR)(bs->cmdbuf, pg->dd.templates[0],
+               VKCTX(CmdPushDescriptorSetWithTemplateKHR)(bs->main_cmdbuf.vk, pg->dd.templates[0],
                                                          pg->layout, 0, ctx);
          } else {
             if (ctx->dd.push_state_changed[is_compute]) {
@@ -1427,7 +1428,7 @@ zink_descriptors_update(struct zink_context *ctx, bool is_compute)
                bs->dd.sets[is_compute][0] = push_set;
             }
             assert(bs->dd.sets[is_compute][0]);
-            VKCTX(CmdBindDescriptorSets)(bs->cmdbuf,
+            VKCTX(CmdBindDescriptorSets)(bs->main_cmdbuf.vk,
                                     is_compute ? VK_PIPELINE_BIND_POINT_COMPUTE : VK_PIPELINE_BIND_POINT_GRAPHICS,
                                     pg->layout, 0, 1, &bs->dd.sets[is_compute][0],
                                     0, NULL);
@@ -1444,7 +1445,7 @@ zink_descriptors_update(struct zink_context *ctx, bool is_compute)
       if (zink_descriptor_mode == ZINK_DESCRIPTOR_MODE_DB) {
          bind_bindless_db(ctx, pg);
       } else {
-         VKCTX(CmdBindDescriptorSets)(ctx->batch.state->cmdbuf, is_compute ? VK_PIPELINE_BIND_POINT_COMPUTE : VK_PIPELINE_BIND_POINT_GRAPHICS,
+         VKCTX(CmdBindDescriptorSets)(ctx->batch.state->main_cmdbuf.vk, is_compute ? VK_PIPELINE_BIND_POINT_COMPUTE : VK_PIPELINE_BIND_POINT_GRAPHICS,
                                     pg->layout, screen->desc_set_id[ZINK_DESCRIPTOR_BINDLESS], 1, &ctx->dd.t.bindless_set,
                                     0, NULL);
       }

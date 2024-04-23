@@ -593,6 +593,11 @@ struct zink_batch_obj_list {
    struct zink_resource_object **objs;
 };
 
+struct zink_cmdbuf {
+   VkCommandBuffer vk;
+   bool has_work;
+};
+
 struct zink_batch_state {
    struct zink_fence fence;
    struct zink_batch_state *next;
@@ -600,10 +605,10 @@ struct zink_batch_state {
    struct zink_batch_usage usage;
    struct zink_context *ctx;
    VkCommandPool cmdpool;
-   VkCommandBuffer cmdbuf;
-   VkCommandBuffer reordered_cmdbuf;
+   struct zink_cmdbuf main_cmdbuf;
+   struct zink_cmdbuf reordered_cmdbuf;
    VkCommandPool unsynchronized_cmdpool;
-   VkCommandBuffer unsynchronized_cmdbuf;
+   struct zink_cmdbuf unsynchronized_cmdbuf;
    VkSemaphore signal_semaphore; //external signal semaphore
    struct util_dynarray signal_semaphores; //external signal semaphores
    struct util_dynarray wait_semaphores; //external wait semaphores
@@ -661,8 +666,6 @@ struct zink_batch_state {
    VkDeviceSize resource_size;
 
    bool is_device_lost;
-   bool has_barriers;
-   bool has_unsync;
 };
 
 static inline struct zink_batch_state *

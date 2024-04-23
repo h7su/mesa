@@ -72,10 +72,10 @@ blit_resolve(struct zink_context *ctx, const struct pipe_blit_info *info, bool *
 
    struct zink_batch *batch = &ctx->batch;
    zink_resource_setup_transfer_layouts(ctx, use_src, dst);
-   VkCommandBuffer cmdbuf = *needs_present_readback ?
-                            ctx->batch.state->cmdbuf :
-                            zink_get_cmdbuf(ctx, src, dst);
-   if (cmdbuf == ctx->batch.state->cmdbuf)
+   struct zink_cmdbuf *cmdbuf = *needs_present_readback ?
+                                &ctx->batch.state->main_cmdbuf :
+                                zink_get_cmdbuf(ctx, src, dst);
+   if (cmdbuf == &ctx->batch.state->main_cmdbuf)
       zink_flush_dgc_if_enabled(ctx);
    zink_batch_reference_resource_rw(batch, use_src, false);
    zink_batch_reference_resource_rw(batch, dst, true);
@@ -134,9 +134,10 @@ blit_resolve(struct zink_context *ctx, const struct pipe_blit_info *info, bool *
       region.extent.depth = u_minify(src->base.b.depth0, region.srcSubresource.mipLevel) - region.srcOffset.z;
    if (region.dstOffset.z + region.extent.depth >= u_minify(dst->base.b.depth0, region.dstSubresource.mipLevel))
       region.extent.depth = u_minify(dst->base.b.depth0, region.dstSubresource.mipLevel) - region.dstOffset.z;
-   VKCTX(CmdResolveImage)(cmdbuf, use_src->obj->image, src->layout,
+   VKCTX(CmdResolveImage)(cmdbuf->vk, use_src->obj->image, src->layout,
                      dst->obj->image, dst->layout,
                      1, &region);
+   cmdbuf->has_work = true;
    zink_cmd_debug_marker_end(ctx, cmdbuf, marker);
 
    return true;
@@ -279,10 +280,10 @@ blit_native(struct zink_context *ctx, const struct pipe_blit_info *info, bool *n
 
    struct zink_batch *batch = &ctx->batch;
    zink_resource_setup_transfer_layouts(ctx, use_src, dst);
-   VkCommandBuffer cmdbuf = *needs_present_readback ?
-                            ctx->batch.state->cmdbuf :
-                            zink_get_cmdbuf(ctx, src, dst);
-   if (cmdbuf == ctx->batch.state->cmdbuf)
+   struct zink_cmdbuf *cmdbuf = *needs_present_readback ?
+                                &ctx->batch.state->main_cmdbuf :
+                                zink_get_cmdbuf(ctx, src, dst);
+   if (cmdbuf == &ctx->batch.state->main_cmdbuf)
       zink_flush_dgc_if_enabled(ctx);
    zink_batch_reference_resource_rw(batch, use_src, false);
    zink_batch_reference_resource_rw(batch, dst, true);
@@ -293,10 +294,11 @@ blit_native(struct zink_context *ctx, const struct pipe_blit_info *info, bool *n
                                              info->src.box.width, info->src.box.height,
                                              info->dst.box.width, info->dst.box.height);
 
-   VKCTX(CmdBlitImage)(cmdbuf, use_src->obj->image, src->layout,
+   VKCTX(CmdBlitImage)(cmdbuf->vk, use_src->obj->image, src->layout,
                   dst->obj->image, dst->layout,
                   1, &region,
                   zink_filter(info->filter));
+   cmdbuf->has_work = true;
 
    zink_cmd_debug_marker_end(ctx, cmdbuf, marker);
 
@@ -423,8 +425,8 @@ zink_blit(struct pipe_context *pctx,
    ctx->unordered_blitting = !(info->render_condition_enable && ctx->render_condition_active) &&
                              zink_screen(ctx->base.screen)->info.have_KHR_dynamic_rendering &&
                              !needs_present_readback &&
-                             zink_get_cmdbuf(ctx, src, dst) == ctx->batch.state->reordered_cmdbuf;
-   VkCommandBuffer cmdbuf = ctx->batch.state->cmdbuf;
+                             zink_get_cmdbuf(ctx, src, dst) == &ctx->batch.state->reordered_cmdbuf;
+   struct zink_cmdbuf saved_cmdbuf = ctx->batch.state->main_cmdbuf;
    VkPipeline pipeline = ctx->gfx_pipeline_state.pipeline;
    bool in_rp = ctx->batch.in_rp;
    uint64_t tc_data = ctx->dynamic_fb.tc_info.data;
@@ -434,11 +436,10 @@ zink_blit(struct pipe_context *pctx,
    bool rp_tc_info_updated = ctx->rp_tc_info_updated;
    if (ctx->unordered_blitting) {
       /* for unordered blit, swap the unordered cmdbuf for the main one for the whole op to avoid conditional hell */
-      ctx->batch.state->cmdbuf = ctx->batch.state->reordered_cmdbuf;
+      ctx->batch.state->main_cmdbuf = ctx->batch.state->reordered_cmdbuf;
       ctx->batch.in_rp = false;
       ctx->rp_changed = true;
       ctx->queries_disabled = true;
-      ctx->batch.state->has_barriers = true;
       ctx->pipeline_changed[0] = true;
       zink_reset_ds3_states(ctx);
       zink_select_draw_vbo(ctx);
@@ -486,7 +487,7 @@ zink_blit(struct pipe_context *pctx,
       ctx->rp_tc_info_updated |= rp_tc_info_updated;
       ctx->queries_disabled = queries_disabled;
       ctx->dynamic_fb.tc_info.data = tc_data;
-      ctx->batch.state->cmdbuf = cmdbuf;
+      ctx->batch.state->main_cmdbuf = saved_cmdbuf;
       ctx->gfx_pipeline_state.pipeline = pipeline;
       ctx->pipeline_changed[0] = true;
       ctx->ds3_states = ds3_states;

@@ -757,7 +757,7 @@ begin_render_pass(struct zink_context *ctx)
 #endif
    rpbi.pNext = &infos;
 
-   VKCTX(CmdBeginRenderPass)(batch->state->cmdbuf, &rpbi, VK_SUBPASS_CONTENTS_INLINE);
+   VKCTX(CmdBeginRenderPass)(batch->state->main_cmdbuf.vk, &rpbi, VK_SUBPASS_CONTENTS_INLINE);
    batch->in_rp = true;
    return clear_buffers;
 }
@@ -838,7 +838,7 @@ void
 zink_end_render_pass(struct zink_context *ctx)
 {
    if (ctx->batch.in_rp) {
-      VKCTX(CmdEndRenderPass)(ctx->batch.state->cmdbuf);
+      VKCTX(CmdEndRenderPass)(ctx->batch.state->main_cmdbuf.vk);
 
       for (unsigned i = 0; i < ctx->fb_state.nr_cbufs; i++) {
          struct zink_ctx_surface *csurf = (struct zink_ctx_surface*)ctx->fb_state.cbufs[i];
