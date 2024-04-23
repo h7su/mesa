@@ -208,17 +208,16 @@ panfrost_get_surface_strides(const struct pan_image_layout *layout, unsigned l,
 static mali_ptr
 panfrost_get_surface_pointer(const struct pan_image_layout *layout,
                              enum mali_texture_dimension dim, mali_ptr base,
-                             unsigned l, unsigned w, unsigned f, unsigned s)
+                             unsigned l, unsigned i, unsigned s)
 {
-   unsigned face_mult = dim == MALI_TEXTURE_DIMENSION_CUBE ? 6 : 1;
    unsigned offset;
 
    if (layout->dim == MALI_TEXTURE_DIMENSION_3D) {
-      assert(!f && !s);
+      assert(!s);
       offset =
-         layout->slices[l].offset + (w * panfrost_get_layer_stride(layout, l));
+         layout->slices[l].offset + i * panfrost_get_layer_stride(layout, l);
    } else {
-      offset = panfrost_texture_offset(layout, l, (w * face_mult) + f, s);
+      offset = panfrost_texture_offset(layout, l, i, s);
    }
 
    return base + offset;
@@ -457,7 +456,7 @@ panfrost_emit_plane(const struct pan_image_layout *layout,
 
 static void
 panfrost_emit_surface(const struct pan_image_view *iview, unsigned level,
-                      unsigned layer, unsigned face, unsigned sample,
+                      unsigned index, unsigned sample,
                       enum pipe_format format, void **payload)
 {
    ASSERTED const struct util_format_description *desc =
@@ -497,7 +496,7 @@ panfrost_emit_surface(const struct pan_image_view *iview, unsigned level,
          panfrost_compression_tag(desc, layouts[i]->dim, layouts[i]->modifier);
 
       plane_ptrs[i] = panfrost_get_surface_pointer(
-         layouts[i], iview->dim, base | tag, level, layer, face, sample);
+         layouts[i], iview->dim, base | tag, level, index, sample);
       panfrost_get_surface_strides(layouts[i], level, &row_strides[i],
                                    &surface_strides[i]);
    }
@@ -552,6 +551,17 @@ panfrost_emit_texture_payload(const struct pan_image_view *iview,
     * into a single plane descriptor.
     */
 
+#if PAN_ARCH >= 7
+   /* V7 and later treats faces as extra layers */
+   for (int layer = iview->first_layer; layer <= iview->last_layer; ++layer) {
+      for (int sample = 0; sample < nr_samples; ++sample) {
+         for (int level = iview->first_level; level <= iview->last_level; ++level) {
+            panfrost_emit_surface(iview, level, layer, sample,
+                                  format, &payload);
+         }
+      }
+   }
+#else
    unsigned first_layer = iview->first_layer, last_layer = iview->last_layer;
    unsigned first_face = 0, last_face = 0;
 
@@ -560,19 +570,6 @@ panfrost_emit_texture_payload(const struct pan_image_view *iview,
                                       &last_layer);
    }
 
-#if PAN_ARCH >= 7
-   /* V7 and later treats faces as extra layers */
-   for (int layer = first_layer; layer <= last_layer; ++layer) {
-      for (int face = first_face; face <= last_face; ++face) {
-         for (int sample = 0; sample < nr_samples; ++sample) {
-            for (int level = iview->first_level; level <= iview->last_level; ++level) {
-               panfrost_emit_surface(iview, level, layer, face, sample,
-                                       format, &payload);
-            }
-         }
-      }
-   }
-#else
    /* V6 and earlier has a different memory-layout */
    for (int layer = first_layer; layer <= last_layer; ++layer) {
       for (int level = iview->first_level; level <= iview->last_level; ++level) {
@@ -580,9 +577,14 @@ panfrost_emit_texture_payload(const struct pan_image_view *iview,
           * of one or the other (no support for multisampled cubemaps)
           */
          for (int face = first_face; face <= last_face; ++face) {
-            for (int sample = 0; sample < nr_samples; ++sample)
-               panfrost_emit_surface(iview, level, layer, face, sample,
-                                     format, &payload);
+            for (int sample = 0; sample < nr_samples; ++sample) {
+               unsigned real_layer = layer;
+               if (iview->dim == MALI_TEXTURE_DIMENSION_CUBE)
+                  real_layer = real_layer * 6 + face;
+
+               panfrost_emit_surface(iview, level, real_layer, sample,
+                                    format, &payload);
+            }
          }
       }
    }
@@ -662,11 +664,8 @@ GENX(panfrost_new_texture)(const struct pan_image_view *iview, void *out,
 
    unsigned array_size = iview->last_layer - iview->first_layer + 1;
 
-   if (iview->dim == MALI_TEXTURE_DIMENSION_CUBE) {
-      assert(iview->first_layer % 6 == 0);
-      assert(iview->last_layer % 6 == 5);
+   if (iview->dim == MALI_TEXTURE_DIMENSION_CUBE)
       array_size /= 6;
-   }
 
    /* Multiplanar YUV textures require 2 surface descriptors. */
    if (panfrost_format_is_yuv(iview->format) && PAN_ARCH >= 9 &&
