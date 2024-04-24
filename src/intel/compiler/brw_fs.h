@@ -168,6 +168,8 @@ struct cs_thread_payload : public thread_payload {
 
    fs_reg local_invocation_id[3];
 
+   fs_reg inline_parameter;
+
 protected:
    fs_reg subgroup_id_;
 };
@@ -177,7 +179,6 @@ struct task_mesh_thread_payload : public cs_thread_payload {
 
    fs_reg extended_parameter_0;
    fs_reg local_index;
-   fs_reg inline_parameter;
 
    fs_reg urb_output;
 
@@ -187,6 +188,8 @@ struct task_mesh_thread_payload : public cs_thread_payload {
 
 struct bs_thread_payload : public thread_payload {
    bs_thread_payload(const fs_visitor &v);
+
+   fs_reg inline_parameter;
 
    fs_reg global_arg_ptr;
    fs_reg local_arg_ptr;

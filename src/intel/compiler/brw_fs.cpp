@@ -34,6 +34,7 @@
 #include "brw_fs_live_variables.h"
 #include "brw_nir.h"
 #include "brw_cfg.h"
+#include "brw_rt.h"
 #include "brw_private.h"
 #include "brw_rt.h"
 #include "intel_nir.h"
@@ -1234,7 +1235,16 @@ fs_visitor::assign_curb_setup()
    prog_data->curb_read_length = uniform_push_length + ubo_push_length;
 
    uint64_t used = 0;
-   bool is_compute = gl_shader_stage_is_compute(stage);
+   const bool is_compute = gl_shader_stage_is_compute(stage);
+   const bool pull_push_constants_a64 =
+      (gl_shader_stage_is_rt(stage) &&
+       brw_bs_prog_data(prog_data)->uses_inline_push_addr) ||
+      ((gl_shader_stage_is_compute(stage) ||
+        gl_shader_stage_is_mesh(stage)) &&
+       brw_cs_prog_data(prog_data)->uses_inline_push_addr);
+   const bool pull_push_constants =
+      devinfo->verx10 >= 125 &&
+      (is_compute || pull_push_constants_a64);
 
    if (is_compute && brw_cs_prog_data(prog_data)->uses_inline_data) {
       /* With COMPUTE_WALKER, we can push up to one register worth of data via
@@ -1244,7 +1254,7 @@ fs_visitor::assign_curb_setup()
        */
       assert(devinfo->verx10 >= 125);
       assert(uniform_push_length <= reg_unit(devinfo));
-   } else if (is_compute && devinfo->verx10 >= 125) {
+   } else if (pull_push_constants) {
       assert(devinfo->has_lsc);
       assert(gl_shader_stage_is_compute(stage) ||
              gl_shader_stage_is_mesh(stage) ||
@@ -1252,12 +1262,22 @@ fs_visitor::assign_curb_setup()
       fs_builder ubld = fs_builder(this, 1).exec_all().at(
          cfg->first_block(), cfg->first_block()->start());
 
-      /* The base offset for our push data is passed in as R0.0[31:6]. We
-       * have to mask off the bottom 6 bits.
-       */
-      fs_reg base_addr =
-         ubld.AND(retype(brw_vec1_grf(0, 0), BRW_TYPE_UD),
-                  brw_imm_ud(INTEL_MASK(31, 6)));
+      fs_reg base_addr;
+      if (pull_push_constants_a64) {
+         /* The address of the push constants is at offset 0 in the inline
+          * parameter.
+          */
+         base_addr =
+            gl_shader_stage_is_rt(stage) ?
+            retype(bs_payload().inline_parameter, BRW_TYPE_UQ) :
+            retype(cs_payload().inline_parameter, BRW_TYPE_UQ);
+      } else {
+         /* The base offset for our push data is passed in as R0.0[31:6]. We
+          * have to mask off the bottom 6 bits.
+          */
+         base_addr = ubld.AND(retype(brw_vec1_grf(0, 0), BRW_TYPE_UD),
+                              brw_imm_ud(INTEL_MASK(31, 6)));
+      }
 
       /* For RT stages the address is a pointer to RT_DISPATCH_GLOBALS, the
        * push constants are located behind that data so we have to apply to
@@ -1272,9 +1292,26 @@ fs_visitor::assign_curb_setup()
       for (unsigned i = 0, r = 0; i < pull_constant_ranges.size(); i++) {
          const struct pull_constant_range &range = pull_constant_ranges[i];
          fs_reg addr;
-
          if (range.offset_B != 0 || base_addr_offset_B != 0) {
-            addr = ubld.ADD(base_addr, brw_imm_ud(range.offset_B));
+            if (pull_push_constants_a64) {
+               /* We need to do the carry manually as when this pass is run,
+                * we're not expecting any 64bit ALUs.
+                */
+               addr = ubld.vgrf(BRW_TYPE_UQ);
+               fs_reg addr_ldw = subscript(addr, BRW_TYPE_UD, 0);
+               fs_reg addr_udw = subscript(addr, BRW_TYPE_UD, 1);
+               fs_reg base_addr_ldw = subscript(base_addr, BRW_TYPE_UD, 0);
+               fs_reg base_addr_udw = subscript(base_addr, BRW_TYPE_UD, 1);
+               ubld.ADD(addr_ldw, base_addr_ldw, brw_imm_ud(base_addr_offset_B +
+                                                            range.offset_B));
+               ubld.CMP(ubld.null_reg_d(), addr_ldw, base_addr_ldw, BRW_CONDITIONAL_L);
+               set_predicate(BRW_PREDICATE_NORMAL,
+                             ubld.ADD(addr_udw, base_addr_udw, brw_imm_ud(1)));
+               set_predicate_inv(BRW_PREDICATE_NORMAL, true,
+                                 ubld.MOV(addr_udw, base_addr_udw));
+            } else {
+               addr = ubld.ADD(base_addr, brw_imm_ud(range.offset_B));
+            }
          } else {
             addr = base_addr;
          }
@@ -1293,13 +1330,16 @@ fs_visitor::assign_curb_setup()
          send->sfid = GFX12_SFID_UGM;
          send->desc = lsc_msg_desc(devinfo, LSC_OP_LOAD,
                                    LSC_ADDR_SURFTYPE_FLAT,
-                                   LSC_ADDR_SIZE_A32,
+                                   pull_push_constants_a64 ?
+                                   LSC_ADDR_SIZE_A64 : LSC_ADDR_SIZE_A32,
                                    LSC_DATA_SIZE_D32,
                                    range.length_B / 4 /* num_channels */,
                                    true /* transpose */,
                                    LSC_CACHE(devinfo, LOAD, L1C_L3C));
          send->header_size = 0;
-         send->mlen = lsc_msg_addr_len(devinfo, LSC_ADDR_SIZE_A32, 1);
+         send->mlen = lsc_msg_addr_len(
+            devinfo, pull_push_constants_a64 ?
+            LSC_ADDR_SIZE_A64 : LSC_ADDR_SIZE_A32, 1);
          send->size_written = align(range.length_B, REG_SIZE);
          send->send_is_volatile = true;
 
