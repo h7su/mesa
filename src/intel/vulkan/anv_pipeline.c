@@ -1621,15 +1621,15 @@ anv_pipeline_add_executable(struct anv_pipeline *pipeline,
 
       uint32_t push_size = 0;
       for (unsigned i = 0; i < 4; i++)
-         push_size += stage->bind_map.push_ranges[i].length;
+         push_size += stage->bind_map.push_ranges[i].length_B;
       if (push_size > 0) {
          fprintf(stream, "Push constant ranges:\n");
          for (unsigned i = 0; i < 4; i++) {
-            if (stage->bind_map.push_ranges[i].length == 0)
+            if (stage->bind_map.push_ranges[i].length_B == 0)
                continue;
 
             fprintf(stream, "    RANGE%d (%dB): ", i,
-                    stage->bind_map.push_ranges[i].length * 32);
+                    stage->bind_map.push_ranges[i].length_B);
 
             switch (stage->bind_map.push_ranges[i].set) {
             case ANV_DESCRIPTOR_SET_NULL:
@@ -1643,13 +1643,13 @@ anv_pipeline_add_executable(struct anv_pipeline *pipeline,
             case ANV_DESCRIPTOR_SET_DESCRIPTORS_BUFFER:
                fprintf(stream, "Descriptor buffer (desc buffer) for set %d (start=%dB)",
                        stage->bind_map.push_ranges[i].index,
-                       stage->bind_map.push_ranges[i].start * 32);
+                       stage->bind_map.push_ranges[i].start_B);
                break;
 
             case ANV_DESCRIPTOR_SET_DESCRIPTORS:
                fprintf(stream, "Descriptor buffer for set %d (start=%dB)",
                        stage->bind_map.push_ranges[i].index,
-                       stage->bind_map.push_ranges[i].start * 32);
+                       stage->bind_map.push_ranges[i].start_B);
                break;
 
             case ANV_DESCRIPTOR_SET_NUM_WORK_GROUPS:
@@ -1662,7 +1662,7 @@ anv_pipeline_add_executable(struct anv_pipeline *pipeline,
                fprintf(stream, "UBO (set=%d binding=%d start=%dB)",
                        stage->bind_map.push_ranges[i].set,
                        stage->bind_map.push_ranges[i].index,
-                       stage->bind_map.push_ranges[i].start * 32);
+                       stage->bind_map.push_ranges[i].start_B);
                break;
             }
             fprintf(stream, "\n");

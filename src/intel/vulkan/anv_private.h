@@ -3045,11 +3045,11 @@ struct anv_push_range {
    /** Dynamic offset index (for dynamic UBOs), relative to set. */
    uint8_t dynamic_offset_index;
 
-   /** Start offset in units of 32B */
-   uint8_t start;
+   /** Start offset in bytes */
+   uint16_t start_B;
 
-   /** Range in units of 32B */
-   uint8_t length;
+   /** Range in bytes */
+   uint16_t length_B;
 };
 
 struct anv_pipeline_sets_layout {

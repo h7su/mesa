@@ -1269,7 +1269,7 @@ anv_cmd_buffer_cs_push_constants(struct anv_cmd_buffer *cmd_buffer)
       return state;
 
    void *dst = state.map;
-   const void *src = (char *)data + (range->start * 32);
+   const void *src = (char *)data + range->start_B;
 
    if (cs_prog_data->push.cross_thread.size > 0) {
       memcpy(dst, src, cs_prog_data->push.cross_thread.size);
@@ -1283,7 +1283,7 @@ anv_cmd_buffer_cs_push_constants(struct anv_cmd_buffer *cmd_buffer)
 
          uint32_t *subgroup_id = dst +
             offsetof(struct anv_push_constants, cs.subgroup_id) -
-            (range->start * 32 + cs_prog_data->push.cross_thread.size);
+            (range->start_B + cs_prog_data->push.cross_thread.size);
          *subgroup_id = t;
 
          dst += cs_prog_data->push.per_thread.size;

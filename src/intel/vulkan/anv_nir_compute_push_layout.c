@@ -149,8 +149,8 @@ anv_nir_compute_push_layout(nir_shader *nir,
 
    struct anv_push_range push_constant_range = {
       .set = ANV_DESCRIPTOR_SET_PUSH_CONSTANTS,
-      .start = push_start / 32,
-      .length = DIV_ROUND_UP(push_end - push_start, 32),
+      .start_B = push_start,
+      .length_B = align(push_end - push_start, 32),
    };
 
    if (has_push_intrinsic) {
@@ -244,7 +244,7 @@ anv_nir_compute_push_layout(nir_shader *nir,
 
       const unsigned max_push_regs = 64;
 
-      unsigned total_push_regs = push_constant_range.length;
+      unsigned total_push_regs = push_constant_range.length_B / 32;
       for (unsigned i = 0; i < 4; i++) {
          if (total_push_regs + prog_data->ubo_ranges[i].length > max_push_regs)
             prog_data->ubo_ranges[i].length = max_push_regs - total_push_regs;
@@ -254,7 +254,7 @@ anv_nir_compute_push_layout(nir_shader *nir,
 
       int n = 0;
 
-      if (push_constant_range.length > 0)
+      if (push_constant_range.length_B > 0)
          map->push_ranges[n++] = push_constant_range;
 
       if (robust_flags & BRW_ROBUSTNESS_UBO) {
@@ -265,7 +265,7 @@ anv_nir_compute_push_layout(nir_shader *nir,
             (push_reg_mask_offset - push_start) / 4;
       }
 
-      unsigned range_start_reg = push_constant_range.length;
+      unsigned range_start_reg = push_constant_range.length_B / 32;
 
       for (int i = 0; i < 4; i++) {
          struct brw_ubo_range *ubo_range = &prog_data->ubo_ranges[i];
@@ -285,8 +285,8 @@ anv_nir_compute_push_layout(nir_shader *nir,
             .set = binding->set,
             .index = binding->index,
             .dynamic_offset_index = binding->dynamic_offset_index,
-            .start = ubo_range->start,
-            .length = ubo_range->length,
+            .start_B = ubo_range->start * 32,
+            .length_B = ubo_range->length * 32,
          };
 
          /* We only bother to shader-zero pushed client UBOs */
@@ -324,9 +324,9 @@ anv_nir_compute_push_layout(nir_shader *nir,
 #if 0
    fprintf(stderr, "stage=%s push ranges:\n", gl_shader_stage_name(nir->info.stage));
    for (unsigned i = 0; i < ARRAY_SIZE(map->push_ranges); i++)
-      fprintf(stderr, "   range%i: %03u-%03u set=%u index=%u\n", i,
-              map->push_ranges[i].start,
-              map->push_ranges[i].length,
+      fprintf(stderr, "   range%i: %04u-%04u set=%u index=%u\n", i,
+              map->push_ranges[i].start_B,
+              map->push_ranges[i].length_B,
               map->push_ranges[i].set,
               map->push_ranges[i].index);
 #endif
@@ -345,18 +345,19 @@ anv_nir_validate_push_layout(struct brw_stage_prog_data *prog_data,
                              struct anv_pipeline_bind_map *map)
 {
 #ifndef NDEBUG
-   unsigned prog_data_push_size = DIV_ROUND_UP(prog_data->nr_params, 8);
+   unsigned prog_data_push_size = prog_data->nr_params * 4;
    for (unsigned i = 0; i < 4; i++)
-      prog_data_push_size += prog_data->ubo_ranges[i].length;
+      prog_data_push_size += prog_data->ubo_ranges[i].length * 32;
 
    unsigned bind_map_push_size = 0;
    for (unsigned i = 0; i < 4; i++)
-      bind_map_push_size += map->push_ranges[i].length;
+      bind_map_push_size += map->push_ranges[i].length_B;
 
    /* We could go through everything again but it should be enough to assert
     * that they push the same number of registers.  This should alert us if
     * the back-end compiler decides to re-arrange stuff or shrink a range.
     */
-   assert(prog_data_push_size == bind_map_push_size);
+   assert(DIV_ROUND_UP(prog_data_push_size, 32) ==
+          DIV_ROUND_UP(bind_map_push_size, 32));
 #endif
 }
