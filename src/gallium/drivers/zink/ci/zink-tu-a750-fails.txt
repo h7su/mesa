@@ -3,6 +3,14 @@ dEQP-GLES3.functional.fbo.depth.depth_test_clamp.depth32f_stencil8,Fail
 dEQP-GLES3.functional.fbo.depth.depth_test_clamp.depth_component32f,Fail
 dEQP-GLES3.functional.fbo.depth.depth_write_clamp.depth32f_stencil8,Fail
 dEQP-GLES3.functional.fbo.depth.depth_write_clamp.depth_component32f,Fail
+dEQP-GLES31.functional.texture.border_clamp.range_clamp.linear_float_color,Fail
+
+dEQP-GLES2.functional.rasterization.primitives.line_strip_wide,Fail
+dEQP-GLES2.functional.rasterization.primitives.lines_wide,Fail
+dEQP-GLES3.functional.rasterization.fbo.rbo_singlesample.primitives.lines_wide,Fail
+dEQP-GLES3.functional.rasterization.fbo.texture_2d.primitives.lines_wide,Fail
+dEQP-GLES3.functional.rasterization.primitives.line_strip_wide,Fail
+dEQP-GLES3.functional.rasterization.primitives.lines_wide,Fail
 
 GTF-GL46.gtf30.GL3Tests.sgis_texture_lod.sgis_texture_lod_basic_lod_selection,Fail
 
@@ -26,6 +34,8 @@ glx@glx_arb_create_context_es2_profile@invalid opengl es version,Fail
 glx@glx_arb_create_context_no_error@no error,Fail
 glx@glx_arb_create_context_robustness@invalid reset notification strategy,Fail
 glx@glx_ext_no_config_context@no fbconfig,Fail
+# src/freedreno/ir3/ir3_shared_folding.c:141: ir3_shared_fold: Assertion `instr == __next && "use _safe iterator"' failed.
+shaders@ssa@fs-while-loop-rotate-value,Crash
 spec@arb_texture_rectangle@fbo-blit rect,Fail
 spec@egl_chromium_sync_control@conformance,Fail
 spec@egl_chromium_sync_control@conformance@eglGetSyncValuesCHROMIUM_msc_and_sbc_test,Fail
@@ -72,7 +82,6 @@ spec@!opengl 3.3@minmax,Fail
 spec@arb_bindless_texture@compiler@samplers@arith-bound-sampler-texture2d.frag,Crash
 spec@arb_framebuffer_object@fbo-blit-scaled-linear,Fail
 spec@arb_gpu_shader5@arb_gpu_shader5-interpolateatsample-dynamically-nonuniform,Fail
-spec@arb_gpu_shader5@execution@built-in-functions@fs-interpolateatcentroid-array-of-structs,Crash
 spec@arb_gpu_shader_fp64@execution@arb_gpu_shader_fp64-tf-separate,Fail
 spec@arb_gpu_shader_fp64@execution@glsl-fs-loop-unroll-mul-fp64,Crash
 spec@arb_gpu_shader_fp64@uniform_buffers@fs-ubo-load.indirect.3,Fail
@@ -322,7 +331,6 @@ spec@arb_shader_image_load_store@coherency@Vertex-Geometry shader/'volatile' qua
 spec@arb_shader_image_load_store@coherency@Vertex-Geometry shader/'volatile' qualifier coherency test/512x512,Fail
 spec@arb_shading_language_packing@execution@built-in-functions@fs-packhalf2x16,Fail
 spec@arb_shading_language_packing@execution@built-in-functions@vs-packhalf2x16,Fail
-spec@arb_tessellation_shader@execution@tcs-input-read-mat,Fail
 spec@arb_tessellation_shader@execution@variable-indexing@tes-both-input-array-float-index-rd,Crash
 spec@arb_tessellation_shader@execution@variable-indexing@tes-both-input-array-vec2-index-rd,Crash
 spec@arb_tessellation_shader@execution@variable-indexing@tes-both-input-array-vec3-index-rd,Crash
@@ -471,6 +479,8 @@ spec@ext_transform_feedback@tessellation quad_strip wireframe,Fail
 spec@ext_transform_feedback@tessellation quads wireframe,Fail
 spec@ext_transform_feedback@tessellation triangle_fan flat_first,Fail
 spec@ext_transform_feedback@tessellation triangle_strip flat_first,Fail
+# src/freedreno/ir3/ir3_shared_folding.c:141: ir3_shared_fold: Assertion `instr == __next && "use _safe iterator"' failed.
+spec@glsl-1.10@execution@copy-propagation@glsl-vs-copy-propagation-1,Crash
 spec@glsl-1.10@execution@glsl-fs-inline-explosion,Crash
 spec@glsl-1.10@execution@glsl-vs-inline-explosion,Crash
 spec@glsl-1.10@execution@loops@glsl-fs-unroll-explosion,Crash
@@ -482,7 +492,6 @@ spec@glsl-1.50@built-in constants,Fail
 spec@glsl-1.50@built-in constants@gl_MaxFragmentInputComponents,Fail
 spec@glsl-1.50@execution@geometry@point-size-out,Fail
 spec@glsl-1.50@execution@geometry@primitive-id-restart gl_line_strip_adjacency other,Crash
-spec@glsl-1.50@execution@interface-blocks-complex-vs-fs,Fail
 spec@glsl-1.50@execution@primitive-id-no-gs-quad-strip,Fail
 spec@glsl-1.50@execution@primitive-id-no-gs-quads,Fail
 spec@glsl-1.50@execution@redeclare-pervertex-out-subset-gs,Fail
