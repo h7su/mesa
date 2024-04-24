@@ -62,7 +62,7 @@
     - !reference [.anv-rules, rules]
     - !reference [.zink-common-rules, rules]
 
-.zink-turnip-rules:
+.zink-turnip-collabora-rules:
   stage: layered-backends
   rules:
     - !reference [.test, rules]
@@ -71,7 +71,7 @@
   variables:
     ZINK_DEBUG: optimal_keys
 
-.zink-turnip-manual-rules:
+.zink-turnip-collabora-manual-rules:
   stage: layered-backends
   retry: !reference [.scheduled_pipeline-rules, retry]
   rules:
