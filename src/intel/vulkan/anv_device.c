@@ -4339,7 +4339,11 @@ VkResult anv_AllocateMemory(
        (mem_type->propertyFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT))
       alloc_flags |= ANV_BO_ALLOC_LOCAL_MEM_CPU_VISIBLE;
 
-   if (!mem_heap->is_local_mem)
+   /* If the memory is non-local or host-visible, avoid placement in local
+    * memory.
+    */
+   if (!mem_heap->is_local_mem ||
+       (mem_type->propertyFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) != 0)
       alloc_flags |= ANV_BO_ALLOC_NO_LOCAL_MEM;
 
    if (mem->vk.alloc_flags & VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT)
