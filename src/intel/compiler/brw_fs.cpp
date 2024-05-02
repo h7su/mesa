@@ -1217,6 +1217,17 @@ round_components_to_whole_registers(const intel_device_info *devinfo,
    return DIV_ROUND_UP(c, 8 * reg_unit(devinfo)) * reg_unit(devinfo);
 }
 
+static bool
+shader_stage_uses_a64_pull_constants(gl_shader_stage stage,
+                                     const brw_stage_prog_data *prog_data)
+{
+   if (gl_shader_stage_is_rt(stage))
+      return brw_bs_prog_data_const(prog_data)->uses_inline_push_addr;
+   if (gl_shader_stage_is_compute(stage) || gl_shader_stage_is_mesh(stage))
+      return brw_cs_prog_data_const(prog_data)->uses_inline_push_addr;
+   return false;
+}
+
 void
 fs_visitor::assign_curb_setup()
 {
@@ -1237,15 +1248,10 @@ fs_visitor::assign_curb_setup()
 
    uint64_t used = 0;
    const bool is_compute = gl_shader_stage_is_compute(stage);
-   const bool pull_push_constants_a64 =
-      (gl_shader_stage_is_rt(stage) &&
-       brw_bs_prog_data(prog_data)->uses_inline_push_addr) ||
-      ((gl_shader_stage_is_compute(stage) ||
-        gl_shader_stage_is_mesh(stage)) &&
-       brw_cs_prog_data(prog_data)->uses_inline_push_addr);
-   const bool pull_push_constants =
+   const bool pull_constants =
       devinfo->verx10 >= 125 &&
-      (is_compute || pull_push_constants_a64);
+      (is_compute ||
+       shader_stage_uses_a64_pull_constants(stage, prog_data));
 
    if (is_compute && brw_cs_prog_data(prog_data)->uses_inline_data) {
       /* With COMPUTE_WALKER, we can push up to one register worth of data via
@@ -1255,7 +1261,7 @@ fs_visitor::assign_curb_setup()
        */
       assert(devinfo->verx10 >= 125);
       assert(uniform_push_length <= reg_unit(devinfo));
-   } else if (pull_push_constants) {
+   } else if (pull_constants) {
       assert(devinfo->has_lsc);
       assert(gl_shader_stage_is_compute(stage) ||
              gl_shader_stage_is_mesh(stage) ||
@@ -1263,22 +1269,18 @@ fs_visitor::assign_curb_setup()
       fs_builder ubld = fs_builder(this, 1).exec_all().at(
          cfg->first_block(), cfg->first_block()->start());
 
-      fs_reg base_addr;
-      if (pull_push_constants_a64) {
-         /* The address of the push constants is at offset 0 in the inline
-          * parameter.
-          */
-         base_addr =
-            gl_shader_stage_is_rt(stage) ?
-            retype(bs_payload().inline_parameter, BRW_TYPE_UQ) :
-            retype(cs_payload().inline_parameter, BRW_TYPE_UQ);
-      } else {
-         /* The base offset for our push data is passed in as R0.0[31:6]. We
-          * have to mask off the bottom 6 bits.
-          */
-         base_addr = ubld.AND(retype(brw_vec1_grf(0, 0), BRW_TYPE_UD),
-                              brw_imm_ud(INTEL_MASK(31, 6)));
-      }
+      /* The address of the push constants is at offset 0 in the inline
+       * parameter.
+       */
+      fs_reg base_addr_a64 =
+         gl_shader_stage_is_rt(stage) ?
+         retype(bs_payload().inline_parameter, BRW_TYPE_UQ) :
+         retype(cs_payload().inline_parameter, BRW_TYPE_UQ);
+      /* The base offset for our push data is passed in as R0.0[31:6]. We have
+       * to mask off the bottom 6 bits.
+       */
+      fs_reg base_addr_a32 = ubld.AND(retype(brw_vec1_grf(0, 0), BRW_TYPE_UD),
+                                      brw_imm_ud(INTEL_MASK(31, 6)));
 
       /* For RT stages the address is a pointer to RT_DISPATCH_GLOBALS, the
        * push constants are located behind that data so we have to apply to
@@ -1286,24 +1288,25 @@ fs_visitor::assign_curb_setup()
        * driver offsets the address/offset such that we can always loads from
        * offset 0.
        */
-      unsigned base_addr_offset_B =
+      unsigned base_addr_a64_offset_B =
          (gl_shader_stage_is_rt(stage) ? BRW_RT_PUSH_CONST_OFFSET : 0);
 
       /* Do the loading with either A32 or A64 LSC messages */
       for (unsigned i = 0, r = 0; i < pull_constant_ranges.size(); i++) {
          const struct pull_constant_range &range = pull_constant_ranges[i];
          fs_reg addr;
-         if (range.offset_B != 0 || base_addr_offset_B != 0) {
-            if (pull_push_constants_a64) {
+         if (range.offset_B != 0 ||
+             (range.type == PULL_CONSTANT_TYPE_A64 && base_addr_a64_offset_B != 0)) {
+            if (range.type == PULL_CONSTANT_TYPE_A64) {
                /* We need to do the carry manually as when this pass is run,
                 * we're not expecting any 64bit ALUs.
                 */
                addr = ubld.vgrf(BRW_TYPE_UQ);
                fs_reg addr_ldw = subscript(addr, BRW_TYPE_UD, 0);
                fs_reg addr_udw = subscript(addr, BRW_TYPE_UD, 1);
-               fs_reg base_addr_ldw = subscript(base_addr, BRW_TYPE_UD, 0);
-               fs_reg base_addr_udw = subscript(base_addr, BRW_TYPE_UD, 1);
-               ubld.ADD(addr_ldw, base_addr_ldw, brw_imm_ud(base_addr_offset_B +
+               fs_reg base_addr_ldw = subscript(base_addr_a64, BRW_TYPE_UD, 0);
+               fs_reg base_addr_udw = subscript(base_addr_a64, BRW_TYPE_UD, 1);
+               ubld.ADD(addr_ldw, base_addr_ldw, brw_imm_ud(base_addr_a64_offset_B +
                                                             range.offset_B));
                ubld.CMP(ubld.null_reg_d(), addr_ldw, base_addr_ldw, BRW_CONDITIONAL_L);
                set_predicate(BRW_PREDICATE_NORMAL,
@@ -1311,10 +1314,11 @@ fs_visitor::assign_curb_setup()
                set_predicate_inv(BRW_PREDICATE_NORMAL, true,
                                  ubld.MOV(addr_udw, base_addr_udw));
             } else {
-               addr = ubld.ADD(base_addr, brw_imm_ud(range.offset_B));
+               addr = ubld.ADD(base_addr_a32, brw_imm_ud(range.offset_B));
             }
          } else {
-            addr = base_addr;
+            addr = range.type == PULL_CONSTANT_TYPE_A64 ?
+                   base_addr_a64 : base_addr_a32;
          }
 
          fs_reg srcs[4] = {
@@ -1331,7 +1335,7 @@ fs_visitor::assign_curb_setup()
          send->sfid = GFX12_SFID_UGM;
          send->desc = lsc_msg_desc(devinfo, LSC_OP_LOAD,
                                    LSC_ADDR_SURFTYPE_FLAT,
-                                   pull_push_constants_a64 ?
+                                   range.type == PULL_CONSTANT_TYPE_A64 ?
                                    LSC_ADDR_SIZE_A64 : LSC_ADDR_SIZE_A32,
                                    LSC_DATA_SIZE_D32,
                                    range.length_B / 4 /* num_channels */,
@@ -1339,7 +1343,7 @@ fs_visitor::assign_curb_setup()
                                    LSC_CACHE(devinfo, LOAD, L1C_L3C));
          send->header_size = 0;
          send->mlen = lsc_msg_addr_len(
-            devinfo, pull_push_constants_a64 ?
+            devinfo, range.type == PULL_CONSTANT_TYPE_A64 ?
             LSC_ADDR_SIZE_A64 : LSC_ADDR_SIZE_A32, 1);
          send->size_written = align(range.length_B, REG_SIZE);
          send->send_is_volatile = true;
@@ -1988,7 +1992,8 @@ brw_get_subgroup_id_param_index(const intel_device_info *devinfo,
 static std::vector<struct pull_constant_range>
 get_push_constant_access_ranges(const struct intel_device_info *devinfo,
                                 const nir_shader *nir,
-                                nir_intrinsic_op intrinsic)
+                                nir_intrinsic_op intrinsic,
+                                enum pull_constant_type pull_type)
 {
    /* Build a bitfield of used uniforms so that we can pack the push constant
     * loads.
@@ -2032,6 +2037,7 @@ get_push_constant_access_ranges(const struct intel_device_info *devinfo,
 
    std::vector<struct pull_constant_range> ranges;
    struct pull_constant_range current_range = {};
+   current_range.type = pull_type;
    int dword;
    BITSET_FOREACH_SET(dword, push_constant_dwords, XE2_MAX_GRF * 8) {
       if (current_range.length_B == 0) {
@@ -2139,17 +2145,28 @@ fs_visitor::assign_constant_locations()
        (gl_shader_stage_is_compute(stage) ||
         gl_shader_stage_is_mesh(stage) ||
         gl_shader_stage_is_rt(stage))) {
+      enum pull_constant_type pull_type =
+         shader_stage_uses_a64_pull_constants(stage, prog_data) ?
+         PULL_CONSTANT_TYPE_A64 : PULL_CONSTANT_TYPE_A32;
+
       /* Build a bitfield of used uniforms so that we can pack the push
        * constant loads.
        */
       std::vector<struct pull_constant_range> ranges;
       ranges = get_push_constant_access_ranges(devinfo, nir,
-                                               nir_intrinsic_load_uniform);
+                                               nir_intrinsic_load_uniform,
+                                               pull_type);
       for (const auto &r : ranges)
          append_constant_range(BRW_UBO_RANGE_PUSH_CONSTANT, r.offset_B, r.length_B);
       pull_constant_ranges.insert(pull_constant_ranges.end(),
                                   ranges.begin(), ranges.end());
-
+      ranges = get_push_constant_access_ranges(devinfo, nir,
+                                               nir_intrinsic_load_driver_uniform_intel,
+                                               PULL_CONSTANT_TYPE_A32);
+      for (const auto &r : ranges)
+         append_constant_range(BRW_UBO_RANGE_DRIVER_INTERNAL, r.offset_B, r.length_B);
+      pull_constant_ranges.insert(pull_constant_ranges.end(),
+                                  ranges.begin(), ranges.end());
    } else {
       if (uniforms)
          append_constant_range(BRW_UBO_RANGE_PUSH_CONSTANT, 0, uniforms * 4);

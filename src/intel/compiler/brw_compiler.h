@@ -387,6 +387,7 @@ PRAGMA_DIAGNOSTIC_POP
 
 /** Indicates that the range is pointing at driver internal push constants. */
 #define BRW_UBO_RANGE_PUSH_CONSTANT   (UINT16_MAX - 0)
+#define BRW_UBO_RANGE_DRIVER_INTERNAL (UINT16_MAX - 1)
 
 struct brw_ubo_range
 {

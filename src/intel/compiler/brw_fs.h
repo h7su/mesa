@@ -207,9 +207,17 @@ enum instruction_scheduler_mode {
 
 class instruction_scheduler;
 
+enum pull_constant_type {
+   PULL_CONSTANT_TYPE_A32,
+   PULL_CONSTANT_TYPE_A64,
+};
+
 struct pull_constant_range {
-   /* Offset in bytes at which constants are pull from the general state base
-    * offset passed in R0.0
+   /* How the range is pulled into register (A32 or A64 messages) */
+   enum pull_constant_type type;
+   /* Offset in bytes at which constants are pull from :
+    *   - the general state base offset passed in R0.0 with A32 messages
+    *   - the 64bit address located in R2.0 with A64 messages
     */
    uint32_t offset_B;
    /* Length in bytes of constants to be loaded in registers (aligned to a
