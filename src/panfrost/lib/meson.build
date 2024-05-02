@@ -91,13 +91,13 @@ libpanfrost_shader_files = files(
 prepended_input_args = []
 foreach input_arg : libpanfrost_shader_files
   prepended_input_args += ['--in', input_arg]
-endpanfrostforeach
+endforeach
 libpanfrost_shaders = custom_target(
   'libpanfrost_shaders.h',
   input : libpanfrost_shader_files,
   output : 'libpanfrost_shaders.h',
   command : [
-    prog_asahi_clc, '--prefix', 'libpanfrost_shaders',
+    prog_panfrost_clc, '--prefix', 'libpanfrost_shaders',
     prepended_input_args, '-o', '@OUTPUT@', '--',
     '-cl-std=cl2.0', '-D__OPENCL_VERSION__=200',
     '-I' + join_paths(meson.current_source_dir(), '.'),
@@ -105,7 +105,7 @@ libpanfrost_shaders = custom_target(
     '-I' + join_paths(meson.current_build_dir(), '.'),
     ],
   env: ['MESA_SHADER_CACHE_DISABLE=true'],
-  depends : [prog_panfrost_clc, panfrost_pack],
+  depends : [prog_panfrost_clc],
 )
 
 libpanfrost_lib = static_library(
