@@ -1,4 +1,4 @@
 #!/usr/bin/env bash
 
-DEBIAN_ARCH=amd64 \
+DEBIAN_ARCH=arm64 \
 . .gitlab-ci/container/debian/test-base.sh
