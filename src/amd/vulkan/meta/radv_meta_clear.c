@@ -761,8 +761,7 @@ radv_fast_clear_depth(struct radv_cmd_buffer *cmd_buffer, const struct radv_imag
    if (pre_flush) {
       enum radv_cmd_flush_bits bits =
          radv_src_access_flush(cmd_buffer, -1, VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT, iview->image) |
-         radv_dst_access_flush(cmd_buffer, -1, VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT,
-                               iview->image);
+         radv_dst_access_flush(cmd_buffer, -1, VK_ACCESS_2_SHADER_READ_BIT, iview->image);
       cmd_buffer->state.flush_bits |= bits & ~*pre_flush;
       *pre_flush |= cmd_buffer->state.flush_bits;
    }
@@ -1694,8 +1693,7 @@ radv_fast_clear_color(struct radv_cmd_buffer *cmd_buffer, const struct radv_imag
 
    if (pre_flush) {
       enum radv_cmd_flush_bits bits = radv_src_access_flush(cmd_buffer, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-                                                            VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT, iview->image) |
-                                      radv_dst_access_flush(cmd_buffer, -1, VK_ACCESS_2_SHADER_WRITE_BIT, iview->image);
+                                                            VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT, iview->image);
       cmd_buffer->state.flush_bits |= bits & ~*pre_flush;
       *pre_flush |= cmd_buffer->state.flush_bits;
    }
