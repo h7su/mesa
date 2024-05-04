@@ -342,7 +342,7 @@ tu_get_features(struct tu_physical_device *pdevice,
    features->shaderClipDistance = true;
    features->shaderCullDistance = true;
    features->shaderFloat64 = false;
-   features->shaderInt64 = false;
+   features->shaderInt64 = pdevice->info->a7xx.has_64b_ssbo_atomics;
    features->shaderInt16 = true;
    features->sparseBinding = false;
    features->variableMultisampleRate = true;
@@ -368,7 +368,8 @@ tu_get_features(struct tu_physical_device *pdevice,
    features->storageBuffer8BitAccess             = false;
    features->uniformAndStorageBuffer8BitAccess   = false;
    features->storagePushConstant8                = false;
-   features->shaderBufferInt64Atomics            = false;
+   features->shaderBufferInt64Atomics =
+      pdevice->info->a7xx.has_64b_ssbo_atomics;
    features->shaderSharedInt64Atomics            = false;
    features->shaderFloat16                       = true;
    features->shaderInt8                          = false;

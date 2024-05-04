@@ -100,6 +100,7 @@ nir_def *ir3_load_driver_ubo_indirect(nir_builder *b, unsigned components,
                                       struct ir3_driver_ubo *ubo,
                                       unsigned base, nir_def *offset,
                                       unsigned range);
+bool ir3_nir_emulate_64b_atomics(nir_shader *shader);
 
 struct driver_param_info {
    uint32_t offset;
