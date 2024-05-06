@@ -27,6 +27,7 @@
 
 #include "common/v3d_device_info.h"
 #include "drm-uapi/v3d_drm.h"
+#include "util/ralloc.h"
 
 bool
 v3d_get_device_info(int fd, struct v3d_device_info* devinfo, v3d_ioctl_fun drm_ioctl) {
@@ -38,6 +39,9 @@ v3d_get_device_info(int fd, struct v3d_device_info* devinfo, v3d_ioctl_fun drm_i
     };
     struct drm_v3d_get_param hub_ident3 = {
             .param = DRM_V3D_PARAM_V3D_HUB_IDENT3,
+    };
+    struct drm_v3d_get_param max_perfcnt = {
+            .param = DRM_V3D_PARAM_MAX_PERF_COUNTERS,
     };
     int ret;
 
@@ -88,5 +92,27 @@ v3d_get_device_info(int fd, struct v3d_device_info* devinfo, v3d_ioctl_fun drm_i
 
    devinfo->rev = (hub_ident3.value >> 8) & 0xff;
 
+    ret = drm_ioctl(fd, DRM_IOCTL_V3D_GET_PARAM, &max_perfcnt);
+    if (ret != 0) {
+            /* Kernel doesn't have support to return the maximum number of
+             * performance counters.
+             */
+            devinfo->max_perfcnt = 0;
+            devinfo->perfcnt_names = NULL;
+    } else {
+            devinfo->max_perfcnt = max_perfcnt.value;
+
+            devinfo->perfcnt_names = ralloc_array(NULL, char*, devinfo->max_perfcnt);
+            if (!devinfo->perfcnt_names) {
+                fprintf(stderr, "Error allocating performance counters names");
+                return false;
+            }
+    }
+
    return true;
+}
+
+void
+v3d_destroy_device_info(struct v3d_device_info *devinfo) {
+   ralloc_free(devinfo->perfcnt_names);
 }

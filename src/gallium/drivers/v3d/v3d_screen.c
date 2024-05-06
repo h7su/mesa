@@ -92,6 +92,8 @@ v3d_screen_destroy(struct pipe_screen *pscreen)
 
         u_transfer_helper_destroy(pscreen->transfer_helper);
 
+        v3d_destroy_device_info(&screen->devinfo);
+
         close(screen->fd);
         ralloc_free(pscreen);
 }

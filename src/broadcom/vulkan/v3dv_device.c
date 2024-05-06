@@ -625,6 +625,8 @@ physical_device_finish(struct v3dv_physical_device *device)
 
    util_sparse_array_finish(&device->bo_map);
 
+   v3d_destroy_device_info(&device->devinfo);
+
    close(device->render_fd);
    if (device->display_fd >= 0)
       close(device->display_fd);
