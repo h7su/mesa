@@ -26,6 +26,10 @@
 
 #include <xf86drm.h>
 
+#include "glsl_types.h"
+#include "libpanfrost_shaders.h"
+#include "panfrost/compiler/bifrost_compile.h"
+#include "nir_serialize.h"
 #include "drm-uapi/panfrost_drm.h"
 #include "util/hash_table.h"
 #include "util/macros.h"
@@ -134,6 +138,13 @@ panfrost_open_device(void *memctx, int fd, struct panfrost_device *dev)
    dev->sample_positions = panfrost_bo_create(
       dev, panfrost_sample_positions_buffer_size(), 0, "Sample positions");
    panfrost_upload_sample_positions(dev->sample_positions->ptr.cpu);
+
+   glsl_type_singleton_init_or_ref();
+   struct blob_reader blob;
+   blob_reader_init(&blob, (void *)libpanfrost_shaders_nir,
+                    sizeof(libpanfrost_shaders_nir));
+   dev->libpan = nir_deserialize(memctx, &bifrost_nir_options_v9, &blob);
+
    return;
 
 err_free_kmod_dev:
@@ -161,4 +172,6 @@ panfrost_close_device(struct panfrost_device *dev)
 
    if (dev->kmod.dev)
       pan_kmod_dev_destroy(dev->kmod.dev);
+
+   glsl_type_singleton_decref();
 }
