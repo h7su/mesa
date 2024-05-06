@@ -1869,17 +1869,22 @@ radv_generate_graphics_state_key(const struct radv_device *device, const struct 
    }
 
    if (device->vk.enabled_features.smoothLines) {
+      key.dynamic_line_rast_mode = BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_RS_LINE_MODE);
+      if (state->rs && state->rs->line.mode == VK_LINE_RASTERIZATION_MODE_RECTANGULAR_SMOOTH_KHR) {
+         /* If the primitive type is dynamic, we may need to disable line smoothing dynamically. */
+         key.dynamic_line_rast_mode |= BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_IA_PRIMITIVE_TOPOLOGY);
+         key.dynamic_line_rast_mode |= BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_RS_POLYGON_MODE);
+      }
       /* For GPL, when the fragment shader is compiled without any pre-rasterization information,
        * ensure the line rasterization mode is considered dynamic because we can't know if it's
        * going to draw lines or not.
        */
-      if (BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_RS_LINE_MODE) ||
-          ((lib_flags & VK_GRAPHICS_PIPELINE_LIBRARY_FRAGMENT_SHADER_BIT_EXT) &&
-           !(lib_flags & VK_GRAPHICS_PIPELINE_LIBRARY_PRE_RASTERIZATION_SHADERS_BIT_EXT))) {
-         key.dynamic_line_rast_mode = true;
-      } else {
-         key.rs.line_smooth_enabled =
-            state->rs && state->rs->line.mode == VK_LINE_RASTERIZATION_MODE_RECTANGULAR_SMOOTH_KHR;
+      key.dynamic_line_rast_mode |= !state->rs;
+      key.dynamic_line_rast_mode |= !state->ia;
+
+      if (!key.dynamic_line_rast_mode) {
+         key.rs.line_smooth_enabled = state->rs->line.mode == VK_LINE_RASTERIZATION_MODE_RECTANGULAR_SMOOTH_KHR;
+         key.rs.line_smooth_polygon_mode = state->rs->polygon_mode;
       }
    }
 
@@ -2171,7 +2176,7 @@ radv_create_gs_copy_shader(struct radv_device *device, struct vk_pipeline_cache 
    gs_copy_stage.info.inline_push_constant_mask = gs_copy_stage.args.ac.inline_push_const_mask;
 
    NIR_PASS_V(nir, ac_nir_lower_intrinsics_to_args, pdev->info.gfx_level, AC_HW_VERTEX_SHADER, &gs_copy_stage.args.ac);
-   NIR_PASS_V(nir, radv_nir_lower_abi, pdev->info.gfx_level, &gs_copy_stage, gfx_state, pdev->info.address32_hi);
+   NIR_PASS_V(nir, radv_nir_lower_abi, pdev->info.gfx_level, &gs_copy_stage, gfx_state, pdev->info.address32_hi, false);
 
    struct radv_graphics_pipeline_key key = {0};
    bool dump_shader = radv_can_dump_shader(device, nir, true);
@@ -2360,6 +2365,27 @@ radv_get_rasterization_prim(const struct radv_shader_stage *stages, const struct
 }
 
 static bool
+radv_line_smooth_enabled(struct radv_device *device, const struct radv_shader_stage *stages,
+                         const struct radv_graphics_state_key *gfx_state)
+{
+   if (!device->vk.enabled_features.smoothLines || gfx_state->dynamic_line_rast_mode ||
+       !gfx_state->rs.line_smooth_enabled)
+      return false;
+
+   uint32_t rast_prim = radv_get_rasterization_prim(stages, gfx_state);
+   if (rast_prim == -1)
+      rast_prim = radv_conv_prim_to_gs_out(gfx_state->ia.topology, false);
+
+   const uint32_t polygon_mode = radv_translate_fill(gfx_state->rs.line_smooth_polygon_mode);
+
+   bool draw_lines = radv_rast_prim_is_line(rast_prim) || radv_polygon_mode_is_line(polygon_mode);
+   draw_lines &= !radv_rast_prim_is_point(rast_prim);
+   draw_lines &= !radv_polygon_mode_is_point(polygon_mode);
+
+   return draw_lines;
+}
+
+static bool
 radv_skip_graphics_pipeline_compile(const struct radv_device *device, const struct radv_graphics_pipeline *pipeline,
                                     bool fast_linking_enabled)
 {
@@ -2545,7 +2571,11 @@ radv_graphics_shaders_compile(struct radv_device *device, struct vk_pipeline_cac
    {
       int64_t stage_start = os_time_get_nano();
 
-      radv_postprocess_nir(device, gfx_state, &stages[i]);
+      bool line_smooth_enabled = false;
+      if (i == MESA_SHADER_FRAGMENT)
+         line_smooth_enabled = radv_line_smooth_enabled(device, stages, gfx_state);
+
+      radv_postprocess_nir(device, gfx_state, &stages[i], line_smooth_enabled);
 
       stages[i].feedback.duration += os_time_get_nano() - stage_start;
 
