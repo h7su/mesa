@@ -26,8 +26,6 @@
 #include "compiler/brw_nir.h"
 #include "util/mesa-sha1.h"
 
-#define sizeof_field(type, field) sizeof(((type *)0)->field)
-
 void
 anv_nir_compute_push_layout(nir_shader *nir,
                             const struct anv_physical_device *pdevice,
@@ -184,7 +182,7 @@ anv_nir_compute_push_layout(nir_shader *nir,
 
       if (robust_flags & BRW_ROBUSTNESS_UBO) {
          const uint32_t push_reg_mask_offset =
-            offsetof(struct anv_push_constants, push_reg_mask[nir->info.stage]);
+            anv_drv_const_offset(push_reg_mask[nir->info.stage]);
          assert(push_reg_mask_offset >= push_start);
          prog_data->push_reg_mask_param = (struct brw_push_param) {
             .block    = BRW_UBO_RANGE_PUSH_CONSTANT,
@@ -242,7 +240,7 @@ anv_nir_compute_push_layout(nir_shader *nir,
          container_of(prog_data, struct brw_wm_prog_data, base);
 
       const uint32_t fs_msaa_flags_offset =
-         offsetof(struct anv_push_constants, gfx.fs_msaa_flags);
+         anv_drv_const_offset(gfx.fs_msaa_flags);
       assert(fs_msaa_flags_offset >= push_start);
       wm_prog_data->msaa_flags_param = (struct brw_push_param) {
          .block    = BRW_UBO_RANGE_PUSH_CONSTANT,

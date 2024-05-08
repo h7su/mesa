@@ -3411,10 +3411,7 @@ struct anv_xfb_binding {
    VkDeviceSize                                 size;
 };
 
-struct anv_push_constants {
-   /** Push constant data provided by the client through vkPushConstants */
-   uint8_t client_data[MAX_PUSH_CONSTANTS_SIZE];
-
+struct anv_driver_constants {
 #define ANV_DESCRIPTOR_SET_DYNAMIC_INDEX_MASK ((uint32_t)ANV_UBO_ALIGNMENT - 1)
 #define ANV_DESCRIPTOR_SET_OFFSET_MASK        (~(uint32_t)(ANV_UBO_ALIGNMENT - 1))
 
@@ -3479,7 +3476,7 @@ struct anv_push_constants {
           * This is never set by software but is implicitly filled out when
           * uploading the push constants for compute shaders.
           *
-          * This *MUST* be the last field of the anv_push_constants structure.
+          * This *MUST* be the last field of the anv_driver_constants structure.
           */
          uint32_t subgroup_id;
       } cs;
@@ -3648,13 +3645,20 @@ struct anv_cmd_pipeline_state {
    } descriptor_buffers[MAX_SETS];
    struct anv_push_descriptor_set push_descriptor;
 
-   struct anv_push_constants push_constants;
+   /** Push constants from the application */
+   uint8_t                                      push_constants[MAX_PUSH_CONSTANTS_SIZE];
+
+   /** Driver constants (loaded through push constants) */
+   struct anv_driver_constants                  driver_constants;
 
    /** Tracks whether the push constant data has changed and need to be reemitted */
    bool                                         push_constants_data_dirty;
 
+   /** Tracks whether the driver constant data has changed and need to be reemitted */
+   bool                                         driver_constants_data_dirty;
+
    /* Push constant state allocated when flushing push constants. */
-   struct anv_state          push_constants_state;
+   struct anv_state                             push_constants_state;
 
    /**
     * Dynamic buffer offsets.
@@ -3663,7 +3667,7 @@ struct anv_cmd_pipeline_state {
     * independent sets we cannot know which how much in total is going to be
     * used. As a result we need to store the maximum possible number per set.
     *
-    * Those values are written into anv_push_constants::dynamic_offsets at
+    * Those values are written into anv_driver_constants::dynamic_offsets at
     * flush time when have the pipeline with the final
     * anv_pipeline_sets_layout.
     */
@@ -3723,7 +3727,7 @@ struct anv_cmd_graphics_state {
    struct vk_sample_locations_state sample_locations;
 
    /* Dynamic msaa flags, this value can be different from
-    * anv_push_constants::gfx::fs_msaa_flags, as the push constant value only
+    * anv_driver_constants::gfx::fs_msaa_flags, as the push constant value only
     * needs to be updated for fragment shaders dynamically checking the value.
     */
    enum intel_msaa_flags fs_msaa_flags;
@@ -4610,7 +4614,7 @@ struct anv_graphics_pipeline {
    struct vk_dynamic_graphics_state             dynamic_state;
 
    /* If true, the patch control points are passed through push constants
-    * (anv_push_constants::gfx::tcs_input_vertices)
+    * (anv_driver_constants::gfx::tcs_input_vertices)
     */
    bool                                         dynamic_patch_control_points;
 

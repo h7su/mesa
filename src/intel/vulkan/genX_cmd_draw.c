@@ -455,9 +455,10 @@ cmd_buffer_flush_gfx_push_constants(struct anv_cmd_buffer *cmd_buffer,
       const struct anv_shader_bin *shader = pipeline->base.shaders[stage];
       if (shader->prog_data->zero_push_reg) {
          const struct anv_pipeline_bind_map *bind_map = &shader->bind_map;
-         struct anv_push_constants *push = &gfx_state->base.push_constants;
+         struct anv_driver_constants *drv_consts =
+            &gfx_state->base.driver_constants;
 
-         push->push_reg_mask[stage] = 0;
+         drv_consts->push_reg_mask[stage] = 0;
          /* Start of the current range in the shader, relative to the start of
           * push constants in the shader.
           */
@@ -473,13 +474,13 @@ cmd_buffer_flush_gfx_push_constants(struct anv_cmd_buffer *cmd_buffer,
                unsigned bound_regs =
                   MIN2(bound_size - range->start_B, range->length_B) / 32;
                assert(range_start_reg + bound_regs <= 64);
-               push->push_reg_mask[stage] |= BITFIELD64_RANGE(range_start_reg,
-                                                              bound_regs);
+               drv_consts->push_reg_mask[stage] |= BITFIELD64_RANGE(range_start_reg,
+                                                                    bound_regs);
             }
 
             cmd_buffer->state.push_constants_dirty |=
                mesa_to_vk_shader_stage(stage);
-            gfx_state->base.push_constants_data_dirty = true;
+            gfx_state->base.driver_constants_data_dirty = true;
 
             range_start_reg += range->length_B / 32;
          }
@@ -493,7 +494,9 @@ cmd_buffer_flush_gfx_push_constants(struct anv_cmd_buffer *cmd_buffer,
     * Always reallocate on gfx9, gfx11 to fix push constant related flaky tests.
     * See https://gitlab.freedesktop.org/mesa/mesa/-/issues/11064
     */
-   if (gfx_state->base.push_constants_data_dirty || GFX_VER < 12)
+   if (gfx_state->base.push_constants_data_dirty ||
+       gfx_state->base.driver_constants_data_dirty ||
+       GFX_VER < 12)
       gfx_state->base.push_constants_state = ANV_STATE_NULL;
 
    anv_foreach_stage(stage, dirty_stages) {
@@ -566,6 +569,7 @@ cmd_buffer_flush_gfx_push_constants(struct anv_cmd_buffer *cmd_buffer,
 
    cmd_buffer->state.push_constants_dirty &= ~flushed;
    gfx_state->base.push_constants_data_dirty = false;
+   gfx_state->base.driver_constants_data_dirty = false;
 }
 
 #if GFX_VERx10 >= 125

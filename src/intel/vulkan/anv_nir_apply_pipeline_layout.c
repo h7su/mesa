@@ -635,7 +635,7 @@ build_res_index(nir_builder *b,
    case nir_address_format_64bit_global_32bit_offset:
       /* Descriptor set buffer accesses will go through A64 messages, so the
        * index to get the descriptor set buffer address is located in the
-       * anv_push_constants::desc_surface_offsets and it's indexed by the set
+       * anv_driver_constants::desc_surface_offsets and it's indexed by the set
        * number.
        */
       set_idx = set;

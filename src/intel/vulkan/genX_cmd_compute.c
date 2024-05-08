@@ -138,7 +138,7 @@ genX(cmd_buffer_flush_compute_state)(struct anv_cmd_buffer *cmd_buffer)
        * so flag push constants as dirty if we change the pipeline.
        */
       cmd_buffer->state.push_constants_dirty |= VK_SHADER_STAGE_COMPUTE_BIT;
-      comp_state->base.push_constants_data_dirty = true;
+      comp_state->base.driver_constants_data_dirty = true;
    }
 
    cmd_buffer->state.descriptors_dirty |=
@@ -182,10 +182,12 @@ genX(cmd_buffer_flush_compute_state)(struct anv_cmd_buffer *cmd_buffer)
    if (cmd_buffer->state.push_constants_dirty & VK_SHADER_STAGE_COMPUTE_BIT) {
 
       if (comp_state->base.push_constants_state.alloc_size == 0 ||
-          comp_state->base.push_constants_data_dirty) {
+          comp_state->base.push_constants_data_dirty ||
+          comp_state->base.driver_constants_data_dirty) {
          comp_state->base.push_constants_state =
             anv_cmd_buffer_cs_push_constants(cmd_buffer);
          comp_state->base.push_constants_data_dirty = false;
+         comp_state->base.driver_constants_data_dirty = false;
       }
 
 #if GFX_VERx10 < 125
@@ -214,17 +216,17 @@ anv_cmd_buffer_push_base_group_id(struct anv_cmd_buffer *cmd_buffer,
    if (anv_batch_has_error(&cmd_buffer->batch))
       return;
 
-   struct anv_push_constants *push =
-      &cmd_buffer->state.compute.base.push_constants;
-   if (push->cs.base_work_group_id[0] != baseGroupX ||
-       push->cs.base_work_group_id[1] != baseGroupY ||
-       push->cs.base_work_group_id[2] != baseGroupZ) {
-      push->cs.base_work_group_id[0] = baseGroupX;
-      push->cs.base_work_group_id[1] = baseGroupY;
-      push->cs.base_work_group_id[2] = baseGroupZ;
+   struct anv_driver_constants *drv_consts =
+      &cmd_buffer->state.compute.base.driver_constants;
+   if (drv_consts->cs.base_work_group_id[0] != baseGroupX ||
+       drv_consts->cs.base_work_group_id[1] != baseGroupY ||
+       drv_consts->cs.base_work_group_id[2] != baseGroupZ) {
+      drv_consts->cs.base_work_group_id[0] = baseGroupX;
+      drv_consts->cs.base_work_group_id[1] = baseGroupY;
+      drv_consts->cs.base_work_group_id[2] = baseGroupZ;
 
       cmd_buffer->state.push_constants_dirty |= VK_SHADER_STAGE_COMPUTE_BIT;
-      cmd_buffer->state.compute.base.push_constants_data_dirty = true;
+      cmd_buffer->state.compute.base.driver_constants_data_dirty = true;
    }
 }
 
@@ -760,7 +762,8 @@ cmd_buffer_emit_rt_dispatch_globals(struct anv_cmd_buffer *cmd_buffer,
    struct anv_state rtdg_state =
       anv_cmd_buffer_alloc_temporary_state(cmd_buffer,
                                            BRW_RT_PUSH_CONST_OFFSET +
-                                           sizeof(struct anv_push_constants),
+                                           sizeof(rt->base.push_constants) +
+                                           sizeof(rt->base.driver_constants),
                                            64);
 
    struct GENX(RT_DISPATCH_GLOBALS) rtdg = {
@@ -808,7 +811,8 @@ cmd_buffer_emit_rt_dispatch_globals_indirect(struct anv_cmd_buffer *cmd_buffer,
    struct anv_state rtdg_state =
       anv_cmd_buffer_alloc_temporary_state(cmd_buffer,
                                            BRW_RT_PUSH_CONST_OFFSET +
-                                           sizeof(struct anv_push_constants),
+                                           sizeof(rt->base.push_constants) +
+                                           sizeof(rt->base.driver_constants),
                                            64);
 
    struct GENX(RT_DISPATCH_GLOBALS) rtdg = {
@@ -929,12 +933,17 @@ cmd_buffer_trace_rays(struct anv_cmd_buffer *cmd_buffer,
       cmd_buffer_emit_rt_dispatch_globals(cmd_buffer, params);
 
    assert(rtdg_state.alloc_size >= (BRW_RT_PUSH_CONST_OFFSET +
-                                    sizeof(struct anv_push_constants)));
+                                    sizeof(rt->base.push_constants) +
+                                    sizeof(rt->base.driver_constants)));
    assert(GENX(RT_DISPATCH_GLOBALS_length) * 4 <= BRW_RT_PUSH_CONST_OFFSET);
    /* Push constants go after the RT_DISPATCH_GLOBALS */
    memcpy(rtdg_state.map + BRW_RT_PUSH_CONST_OFFSET,
-          &cmd_buffer->state.rt.base.push_constants,
-          sizeof(struct anv_push_constants));
+          cmd_buffer->state.rt.base.push_constants,
+          sizeof(cmd_buffer->state.rt.base.push_constants));
+   memcpy(rtdg_state.map + BRW_RT_PUSH_CONST_OFFSET +
+          sizeof(cmd_buffer->state.rt.base.push_constants),
+          &cmd_buffer->state.rt.base.driver_constants,
+          sizeof(cmd_buffer->state.rt.base.driver_constants));
 
    struct anv_address rtdg_addr =
       anv_cmd_buffer_temporary_state_address(cmd_buffer, rtdg_state);
