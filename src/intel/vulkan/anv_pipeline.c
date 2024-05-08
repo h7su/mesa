@@ -341,6 +341,8 @@ struct anv_pipeline_stage {
 
    struct anv_pipeline_bind_map bind_map;
 
+   struct anv_pipeline_push_map push_map;
+
    bool uses_bt_for_push_descs;
 
    enum anv_dynamic_push_bits dynamic_push_values;
@@ -984,14 +986,13 @@ static void
 anv_pipeline_lower_nir(struct anv_pipeline *pipeline,
                        void *mem_ctx,
                        struct anv_pipeline_stage *stage,
-                       struct anv_pipeline_sets_layout *layout,
                        uint32_t view_mask,
                        bool use_primitive_replication)
 {
    const struct anv_physical_device *pdevice = pipeline->device->physical;
    const struct brw_compiler *compiler = pdevice->compiler;
 
-   struct brw_stage_prog_data *prog_data = &stage->prog_data.base;
+   struct anv_pipeline_sets_layout *layout = &pipeline->layout;
    nir_shader *nir = stage->nir;
 
    if (nir->info.stage == MESA_SHADER_FRAGMENT) {
@@ -1058,13 +1059,11 @@ anv_pipeline_lower_nir(struct anv_pipeline *pipeline,
    stage->push_desc_info.used_descriptors =
       anv_nir_compute_used_push_descriptors(nir, layout);
 
-   struct anv_pipeline_push_map push_map = {};
-
    /* Apply the actual pipeline layout to UBOs, SSBOs, and textures */
    NIR_PASS_V(nir, anv_nir_apply_pipeline_layout,
               pdevice, stage->key.base.robust_flags,
               layout->independent_sets,
-              layout, &stage->bind_map, &push_map, mem_ctx);
+              layout, &stage->bind_map, &stage->push_map, mem_ctx);
 
    NIR_PASS(_, nir, nir_lower_explicit_io, nir_var_mem_ubo,
             anv_nir_ubo_addr_format(pdevice, stage->key.base.robust_flags));
@@ -1123,14 +1122,6 @@ anv_pipeline_lower_nir(struct anv_pipeline *pipeline,
 
    NIR_PASS_V(nir, anv_nir_update_resource_intel_block);
 
-   stage->dynamic_push_values = anv_nir_compute_dynamic_push_bits(nir);
-
-   NIR_PASS_V(nir, anv_nir_compute_push_layout,
-              pdevice, stage->key.base.robust_flags,
-              anv_graphics_pipeline_stage_fragment_dynamic(stage),
-              prog_data, &stage->bind_map, &push_map,
-              pipeline->layout.type, mem_ctx);
-
    NIR_PASS_V(nir, anv_nir_lower_resource_intel, pdevice,
               pipeline->layout.type);
 
@@ -1180,6 +1171,24 @@ anv_pipeline_lower_nir(struct anv_pipeline *pipeline,
 #endif
 
    stage->nir = nir;
+}
+
+static void
+anv_pipeline_lower_push_constants(struct anv_pipeline *pipeline,
+                                  void *mem_ctx,
+                                  struct anv_pipeline_stage *stage,
+                                  nir_shader *nir)
+{
+   const struct anv_physical_device *pdevice = pipeline->device->physical;
+   struct brw_stage_prog_data *prog_data = &stage->prog_data.base;
+
+   stage->dynamic_push_values = anv_nir_compute_dynamic_push_bits(stage->nir);
+
+   NIR_PASS_V(nir, anv_nir_compute_push_layout,
+              pdevice, stage->key.base.robust_flags,
+              anv_graphics_pipeline_stage_fragment_dynamic(stage),
+              prog_data, &stage->bind_map, &stage->push_map,
+              pipeline->layout.type, mem_ctx);
 }
 
 static void
@@ -2365,8 +2374,10 @@ anv_graphics_pipeline_compile(struct anv_graphics_base_pipeline *pipeline,
       int64_t stage_start = os_time_get_nano();
 
       anv_pipeline_lower_nir(&pipeline->base, tmp_ctx, stage,
-                             &pipeline->base.layout, view_mask,
-                             use_primitive_replication);
+                             view_mask, use_primitive_replication);
+
+      anv_pipeline_lower_push_constants(&pipeline->base, tmp_ctx,
+                                        stage, stage->nir);
 
       struct shader_info *cur_info = &stage->nir->info;
 
@@ -2646,8 +2657,11 @@ anv_pipeline_compile_cs(struct anv_compute_pipeline *pipeline,
       anv_pipeline_nir_preprocess(&pipeline->base, &stage);
 
       anv_pipeline_lower_nir(&pipeline->base, mem_ctx, &stage,
-                             &pipeline->base.layout, 0 /* view_mask */,
+                             0 /* view_mask */,
                              false /* use_primitive_replication */);
+
+      anv_pipeline_lower_push_constants(&pipeline->base, mem_ctx,
+                                        &stage, stage.nir);
 
       anv_fixup_subgroup_size(device, &stage.nir->info);
 
@@ -3356,11 +3370,13 @@ compile_upload_rt_shader(struct anv_ray_tracing_pipeline *pipeline,
                &resume_shaders, &num_resume_shaders, mem_ctx);
       NIR_PASS(_, nir, brw_nir_lower_shader_calls, &stage->key.bs);
       NIR_PASS_V(nir, brw_nir_lower_rt_intrinsics, &stage->key.base, devinfo);
+      anv_pipeline_lower_push_constants(&pipeline->base, mem_ctx, stage, nir);
    }
 
    for (unsigned i = 0; i < num_resume_shaders; i++) {
       NIR_PASS(_,resume_shaders[i], brw_nir_lower_shader_calls, &stage->key.bs);
       NIR_PASS_V(resume_shaders[i], brw_nir_lower_rt_intrinsics, &stage->key.base, devinfo);
+      anv_pipeline_lower_push_constants(&pipeline->base, mem_ctx, stage, resume_shaders[i]);
    }
 
    struct brw_compile_bs_params params = {
@@ -3642,7 +3658,7 @@ anv_pipeline_compile_ray_tracing(struct anv_ray_tracing_pipeline *pipeline,
       anv_pipeline_nir_preprocess(&pipeline->base, &stages[i]);
 
       anv_pipeline_lower_nir(&pipeline->base, tmp_pipeline_ctx, &stages[i],
-                             &pipeline->base.layout, 0 /* view_mask */,
+                             0 /* view_mask */,
                              false /* use_primitive_replication */);
 
       stages[i].feedback.duration += os_time_get_nano() - stage_start;
