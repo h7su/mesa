@@ -69,7 +69,7 @@ v3dv-rpi4-vk:arm64:
   variables:
     HWCI_TEST_SCRIPT: "/install/deqp-runner.sh"
     HWCI_START_WESTON: 1
-    DEQP_EXPECTED_RENDERER: "V3D.4.2"
+    DEQP_EXPECTED_RENDERER: "V3D.4.2.14"
     DEQP_FRACTION: 3
     DEQP_VER: vk
     FLAKES_CHANNEL: "#videocore-ci"
@@ -97,7 +97,7 @@ v3dv-rpi4-vk-full:arm64:
   variables:
     HWCI_TEST_SCRIPT: "/install/deqp-runner.sh"
     HWCI_START_WESTON: 1
-    DEQP_EXPECTED_RENDERER: "V3D.7.1"
+    DEQP_EXPECTED_RENDERER: "V3D.7.1.7"
     DEQP_FRACTION: 15
     DEQP_VER: vk
     FLAKES_CHANNEL: "#videocore-ci"
