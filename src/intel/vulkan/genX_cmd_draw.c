@@ -207,6 +207,16 @@ get_push_range_address(struct anv_cmd_buffer *cmd_buffer,
          cmd_buffer, gfx_state->base.push_constants_state);
    }
 
+   case ANV_DESCRIPTOR_SET_DRIVER_CONSTANTS: {
+      if (gfx_state->base.driver_constants_state.alloc_size == 0) {
+         gfx_state->base.driver_constants_state =
+            anv_cmd_buffer_driver_constants(cmd_buffer, &gfx_state->base);
+      }
+      return anv_state_pool_state_address(
+         &cmd_buffer->device->general_state_pool,
+         gfx_state->base.driver_constants_state);
+   }
+
    default: {
       assert(range->set < MAX_SETS);
       struct anv_descriptor_set *set =
@@ -274,6 +284,7 @@ get_push_range_bound_size(struct anv_cmd_buffer *cmd_buffer,
          range->index].layout->descriptor_buffer_surface_size;
 
    case ANV_DESCRIPTOR_SET_PUSH_CONSTANTS:
+   case ANV_DESCRIPTOR_SET_DRIVER_CONSTANTS:
       return range->start_B + range->length_B;
 
    default: {
@@ -468,6 +479,14 @@ cmd_buffer_flush_gfx_push_constants(struct anv_cmd_buffer *cmd_buffer,
             if (range->length_B == 0)
                continue;
 
+            /* All the accesses of driver constants should always be properly
+             * bound, no need to zero anything.
+             */
+            if (range->set == ANV_DESCRIPTOR_SET_DRIVER_CONSTANTS) {
+               range_start_reg += range->length_B / 32;
+               continue;
+            }
+
             unsigned bound_size =
                get_push_range_bound_size(cmd_buffer, shader, range);
             if (bound_size >= range->start_B) {
@@ -494,10 +513,11 @@ cmd_buffer_flush_gfx_push_constants(struct anv_cmd_buffer *cmd_buffer,
     * Always reallocate on gfx9, gfx11 to fix push constant related flaky tests.
     * See https://gitlab.freedesktop.org/mesa/mesa/-/issues/11064
     */
-   if (gfx_state->base.push_constants_data_dirty ||
-       gfx_state->base.driver_constants_data_dirty ||
-       GFX_VER < 12)
+   if (gfx_state->base.push_constants_data_dirty || GFX_VER < 12)
       gfx_state->base.push_constants_state = ANV_STATE_NULL;
+
+   if (gfx_state->base.driver_constants_data_dirty || GFX_VER < 12)
+      gfx_state->base.driver_constants_state = ANV_STATE_NULL;
 
    anv_foreach_stage(stage, dirty_stages) {
       unsigned buffer_count = 0;

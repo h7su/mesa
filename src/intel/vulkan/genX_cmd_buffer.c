@@ -395,6 +395,7 @@ genX(cmd_buffer_emit_state_base_address)(struct anv_cmd_buffer *cmd_buffer)
        */
       cmd_buffer->state.push_constants_dirty |= VK_SHADER_STAGE_COMPUTE_BIT;
       cmd_buffer->state.compute.base.push_constants_data_dirty = true;
+      cmd_buffer->state.compute.base.driver_constants_data_dirty = true;
 #endif
    }
 }

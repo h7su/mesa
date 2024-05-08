@@ -26,6 +26,71 @@
 #include "compiler/brw_nir.h"
 #include "util/mesa-sha1.h"
 
+struct push_range {
+   unsigned start;
+   unsigned end;
+};
+
+static void
+push_range_reset(struct push_range *range)
+{
+   range->start = UINT_MAX;
+   range->end   = 0;
+}
+
+static bool
+push_range_empty(const struct push_range *range)
+{
+   return range->start > range->end;
+}
+
+struct push_context {
+   bool has_const_ubo;
+   struct push_range push;
+   struct push_range driver;
+};
+
+static void
+gather_push_ranges(struct push_context *ctx, nir_shader *nir)
+{
+   nir_foreach_function_impl(impl, nir) {
+      nir_foreach_block(block, impl) {
+         nir_foreach_instr(instr, block) {
+            if (instr->type != nir_instr_type_intrinsic)
+               continue;
+
+            nir_intrinsic_instr *intrin = nir_instr_as_intrinsic(instr);
+            switch (intrin->intrinsic) {
+            case nir_intrinsic_load_ubo:
+               if (brw_nir_ubo_surface_index_is_pushable(intrin->src[0]) &&
+                   nir_src_is_const(intrin->src[1]))
+                  ctx->has_const_ubo = true;
+               break;
+
+            case nir_intrinsic_load_push_constant: {
+               unsigned base = nir_intrinsic_base(intrin);
+               unsigned range = nir_intrinsic_range(intrin);
+               ctx->push.start = MIN2(ctx->push.start, base);
+               ctx->push.end = MAX2(ctx->push.end, base + range);
+               break;
+            }
+
+            case nir_intrinsic_load_driver_uniform_intel: {
+               unsigned base = nir_intrinsic_base(intrin);
+               unsigned range = nir_intrinsic_range(intrin);
+               ctx->driver.start = MIN2(ctx->driver.start, base);
+               ctx->driver.end = MAX2(ctx->driver.end, base + range);
+               break;
+            }
+
+            default:
+               break;
+            }
+         }
+      }
+   }
+}
+
 void
 anv_nir_compute_push_layout(nir_shader *nir,
                             const struct anv_physical_device *pdevice,
@@ -41,42 +106,16 @@ anv_nir_compute_push_layout(nir_shader *nir,
    const struct intel_device_info *devinfo = compiler->devinfo;
    memset(map->push_ranges, 0, sizeof(map->push_ranges));
 
-   bool has_const_ubo = false;
-   unsigned push_start = UINT32_MAX, push_end = 0;
-   nir_foreach_function_impl(impl, nir) {
-      nir_foreach_block(block, impl) {
-         nir_foreach_instr(instr, block) {
-            if (instr->type != nir_instr_type_intrinsic)
-               continue;
+   struct push_context ctx = {};
+   push_range_reset(&ctx.push);
+   push_range_reset(&ctx.driver);
+   gather_push_ranges(&ctx, nir);
 
-            nir_intrinsic_instr *intrin = nir_instr_as_intrinsic(instr);
-            switch (intrin->intrinsic) {
-            case nir_intrinsic_load_ubo:
-               if (brw_nir_ubo_surface_index_is_pushable(intrin->src[0]) &&
-                   nir_src_is_const(intrin->src[1]))
-                  has_const_ubo = true;
-               break;
+   bool has_push_intrinsic = !push_range_empty(&ctx.push);
 
-            case nir_intrinsic_load_push_constant: {
-               unsigned base = nir_intrinsic_base(intrin);
-               unsigned range = nir_intrinsic_range(intrin);
-               push_start = MIN2(push_start, base);
-               push_end = MAX2(push_end, base + range);
-               break;
-            }
-
-            default:
-               break;
-            }
-         }
-      }
-   }
-
-   const bool has_push_intrinsic = push_start <= push_end;
-
-   const bool push_ubo_ranges =
-      has_const_ubo && nir->info.stage != MESA_SHADER_COMPUTE &&
-      !brw_shader_stage_requires_bindless_resources(nir->info.stage);
+   const bool stage_can_push_ubo_ranges =
+      brw_shader_stage_can_push_ubo(nir->info.stage);
+   const bool push_ubo_ranges = ctx.has_const_ubo && stage_can_push_ubo_ranges;
 
    if (push_ubo_ranges && (robust_flags & BRW_ROBUSTNESS_UBO)) {
       /* We can't on-the-fly adjust our push ranges because doing so would
@@ -89,8 +128,8 @@ anv_nir_compute_push_layout(nir_shader *nir,
          anv_drv_const_offset(push_reg_mask[nir->info.stage]);
       const uint32_t push_reg_mask_end = push_reg_mask_start +
                                          anv_drv_const_size(push_reg_mask[nir->info.stage]);
-      push_start = MIN2(push_start, push_reg_mask_start);
-      push_end = MAX2(push_end, push_reg_mask_end);
+      ctx.driver.start = MIN2(ctx.driver.start, push_reg_mask_start);
+      ctx.driver.end = MAX2(ctx.driver.end, push_reg_mask_end);
    }
 
    if (nir->info.stage == MESA_SHADER_FRAGMENT && fragment_dynamic) {
@@ -98,8 +137,8 @@ anv_nir_compute_push_layout(nir_shader *nir,
          anv_drv_const_offset(gfx.fs_msaa_flags);
       const uint32_t fs_msaa_flags_end = fs_msaa_flags_start +
                                          anv_drv_const_size(gfx.fs_msaa_flags);
-      push_start = MIN2(push_start, fs_msaa_flags_start);
-      push_end = MAX2(push_end, fs_msaa_flags_end);
+      ctx.driver.start = MIN2(ctx.driver.start, fs_msaa_flags_start);
+      ctx.driver.end = MAX2(ctx.driver.end, fs_msaa_flags_end);
    }
 
    if (nir->info.stage == MESA_SHADER_COMPUTE && devinfo->verx10 < 125) {
@@ -110,32 +149,74 @@ anv_nir_compute_push_layout(nir_shader *nir,
        * push constants one dword less than the full amount including
        * gl_SubgroupId.
        */
-      assert(push_end <= anv_drv_const_offset(cs.subgroup_id));
-      push_end = anv_drv_const_offset(cs.subgroup_id);
+      assert(ctx.driver.end <= anv_drv_const_offset(cs.subgroup_id));
+      ctx.driver.start = MIN2(ctx.driver.start, anv_drv_const_offset(cs.subgroup_id));
+      ctx.driver.end = anv_drv_const_offset(cs.subgroup_id);
    }
 
-   /* Align push_start down to the push constant alignment and make it no
-    * larger than push_end (no push constants is indicated by push_start =
+   /* Some stages cannot push/pull more than 1 range, so we have to merge
+    * application & driver push constants.
+    */
+   const bool stage_has_single_push_range =
+      (nir->info.stage == MESA_SHADER_COMPUTE && devinfo->verx10 < 125) ||
+      brw_shader_stage_is_bindless(nir->info.stage);
+   if (stage_has_single_push_range && !push_range_empty(&ctx.driver)) {
+      nir_foreach_function_impl(impl, nir) {
+         nir_foreach_block(block, impl) {
+            nir_foreach_instr_safe(instr, block) {
+               if (instr->type != nir_instr_type_intrinsic)
+                  continue;
+
+               nir_intrinsic_instr *intrin = nir_instr_as_intrinsic(instr);
+               if (intrin->intrinsic != nir_intrinsic_load_driver_uniform_intel)
+                  continue;
+
+               intrin->intrinsic = nir_intrinsic_load_push_constant;
+               nir_intrinsic_set_base(intrin,
+                                      nir_intrinsic_base(intrin) +
+                                      MAX_PUSH_CONSTANTS_SIZE);
+            }
+         }
+      }
+
+      ctx.push.start = MIN2(ctx.push.start,
+                            MAX_PUSH_CONSTANTS_SIZE + ctx.driver.start);
+      ctx.push.end   = MAX_PUSH_CONSTANTS_SIZE + ctx.driver.end;
+      push_range_reset(&ctx.driver);
+
+      has_push_intrinsic = true;
+   }
+
+   /* Align push ranges down to the push constant alignment and make it no
+    * larger than the range.end (no push constants is indicated by start =
     * UINT_MAX).
     */
    const uint32_t push_constant_align =
       brw_shader_stage_push_constant_alignment(devinfo, nir->info.stage);
-   push_start = MIN2(push_start, push_end);
-   push_start = ROUND_DOWN_TO(push_start, push_constant_align);
+   ctx.push.start = MIN2(ctx.push.start, ctx.push.end);
+   ctx.push.start = ROUND_DOWN_TO(ctx.push.start, push_constant_align);
+
+   ctx.driver.start = MIN2(ctx.driver.start, ctx.driver.end);
+   ctx.driver.start = ROUND_DOWN_TO(ctx.driver.start, push_constant_align);
 
    const unsigned base_push_offset =
-      gl_shader_stage_is_rt(nir->info.stage) ? 0 : push_start;
+      gl_shader_stage_is_rt(nir->info.stage) ? 0 : ctx.push.start;
 
    /* For scalar, push data size needs to be aligned to a DWORD. */
    const unsigned alignment = 4;
-   nir->num_uniforms = ALIGN(push_end - base_push_offset, alignment);
+   nir->num_uniforms = ALIGN(ctx.push.end - base_push_offset, alignment);
    prog_data->nr_params = nir->num_uniforms / 4;
    prog_data->param = rzalloc_array(mem_ctx, uint32_t, prog_data->nr_params);
 
    struct anv_push_range push_constant_range = {
       .set = ANV_DESCRIPTOR_SET_PUSH_CONSTANTS,
-      .start_B = push_start,
-      .length_B = align(push_end - push_start, push_constant_align),
+      .start_B = ctx.push.start,
+      .length_B = align(ctx.push.end - ctx.push.start, push_constant_align),
+   };
+   struct anv_push_range driver_constant_range = {
+      .set = ANV_DESCRIPTOR_SET_DRIVER_CONSTANTS,
+      .start_B = ctx.driver.start,
+      .length_B = align(ctx.driver.end - ctx.driver.start, push_constant_align),
    };
 
    if (has_push_intrinsic) {
@@ -162,8 +243,29 @@ anv_nir_compute_push_layout(nir_shader *nir,
       }
    }
 
+   int n_push = 0;
+
+   if (push_constant_range.length_B > 0)
+      map->push_ranges[n_push++] = push_constant_range;
+   if (driver_constant_range.length_B > 0)
+      map->push_ranges[n_push++] = driver_constant_range;
+
    if (push_ubo_ranges) {
-      brw_nir_analyze_ubo_ranges(compiler, nir, prog_data->ubo_ranges);
+      struct brw_ubo_range ubo_ranges[4];
+      brw_nir_analyze_ubo_ranges(compiler, nir, ubo_ranges);
+
+      /* Put the driver constants in the first UBO range. */
+      if (driver_constant_range.length_B > 0) {
+         prog_data->ubo_ranges[0] = (struct brw_ubo_range) {
+            .block    = BRW_UBO_RANGE_DRIVER_INTERNAL,
+            .start_B  = driver_constant_range.start_B,
+            .length_B = driver_constant_range.length_B,
+         };
+         memcpy(&prog_data->ubo_ranges[1], ubo_ranges,
+                (ARRAY_SIZE(ubo_ranges) - 1) * sizeof(ubo_ranges[0]));
+      } else {
+         memcpy(prog_data->ubo_ranges, ubo_ranges, sizeof(ubo_ranges));
+      }
 
       const unsigned max_push_size = 64 * 32;
 
@@ -175,19 +277,25 @@ anv_nir_compute_push_layout(nir_shader *nir,
       }
       assert(total_push_size <= max_push_size);
 
-      int n = 0;
-
-      if (push_constant_range.length_B > 0)
-         map->push_ranges[n++] = push_constant_range;
-
       if (robust_flags & BRW_ROBUSTNESS_UBO) {
-         const uint32_t push_reg_mask_offset =
-            anv_drv_const_offset(push_reg_mask[nir->info.stage]);
-         assert(push_reg_mask_offset >= push_start);
-         prog_data->push_reg_mask_param = (struct brw_push_param) {
-            .block    = BRW_UBO_RANGE_PUSH_CONSTANT,
-            .offset_B = push_reg_mask_offset - push_start,
-         };
+         if (stage_has_single_push_range) {
+            const uint32_t push_reg_mask_offset =
+               MAX_PUSH_CONSTANTS_SIZE +
+               anv_drv_const_offset(push_reg_mask[nir->info.stage]);
+            assert(push_reg_mask_offset >= ctx.push.start);
+            prog_data->push_reg_mask_param = (struct brw_push_param) {
+               .block    = BRW_UBO_RANGE_PUSH_CONSTANT,
+               .offset_B = push_reg_mask_offset - ctx.push.start,
+            };
+         } else {
+            const uint32_t push_reg_mask_offset =
+               anv_drv_const_offset(push_reg_mask[nir->info.stage]);
+            assert(push_reg_mask_offset >= ctx.driver.start);
+            prog_data->push_reg_mask_param = (struct brw_push_param) {
+               .block    = BRW_UBO_RANGE_DRIVER_INTERNAL,
+               .offset_B = push_reg_mask_offset - ctx.driver.start,
+            };
+         }
       }
 
       unsigned range_start_reg = push_constant_range.length_B / 32;
@@ -197,16 +305,21 @@ anv_nir_compute_push_layout(nir_shader *nir,
          if (ubo_range->length_B == 0)
             continue;
 
-         if (n >= 4) {
+         if (n_push >= 4) {
             memset(ubo_range, 0, sizeof(*ubo_range));
             continue;
          }
 
+         /* Skip the driver constants, we put them in before. */
+         if (ubo_range->block == BRW_UBO_RANGE_DRIVER_INTERNAL) {
+            range_start_reg += DIV_ROUND_UP(ubo_range->length_B, 32);
+            continue;
+         }
          assert(ubo_range->block < push_map->block_count);
          const struct anv_pipeline_binding *binding =
             &push_map->block_to_descriptor[ubo_range->block];
 
-         map->push_ranges[n++] = (struct anv_push_range) {
+         map->push_ranges[n_push++] = (struct anv_push_range) {
             .set = binding->set,
             .index = binding->index,
             .dynamic_offset_index = binding->dynamic_offset_index,
@@ -223,16 +336,12 @@ anv_nir_compute_push_layout(nir_shader *nir,
 
          range_start_reg += DIV_ROUND_UP(ubo_range->length_B, 32);
       }
-   } else {
-      /* For Ivy Bridge, the push constants packets have a different
-       * rule that would require us to iterate in the other direction
-       * and possibly mess around with dynamic state base address.
-       * Don't bother; just emit regular push constants at n = 0.
-       *
-       * In the compute case, we don't have multiple push ranges so it's
-       * better to just provide one in push_ranges[0].
-       */
-      map->push_ranges[0] = push_constant_range;
+   } else if (!stage_has_single_push_range) {
+      prog_data->ubo_ranges[0] = (struct brw_ubo_range) {
+         .block    = BRW_UBO_RANGE_DRIVER_INTERNAL,
+         .start_B  = driver_constant_range.start_B,
+         .length_B = driver_constant_range.length_B,
+      };
    }
 
    if (nir->info.stage == MESA_SHADER_FRAGMENT && fragment_dynamic) {
@@ -241,10 +350,10 @@ anv_nir_compute_push_layout(nir_shader *nir,
 
       const uint32_t fs_msaa_flags_offset =
          anv_drv_const_offset(gfx.fs_msaa_flags);
-      assert(fs_msaa_flags_offset >= push_start);
+      assert(fs_msaa_flags_offset >= ctx.driver.start);
       wm_prog_data->msaa_flags_param = (struct brw_push_param) {
-         .block    = BRW_UBO_RANGE_PUSH_CONSTANT,
-         .offset_B = fs_msaa_flags_offset - push_start,
+         .block    = BRW_UBO_RANGE_DRIVER_INTERNAL,
+         .offset_B = fs_msaa_flags_offset - ctx.driver.start,
       };
    }
 

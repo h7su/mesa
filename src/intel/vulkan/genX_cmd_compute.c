@@ -180,7 +180,20 @@ genX(cmd_buffer_flush_compute_state)(struct anv_cmd_buffer *cmd_buffer)
    }
 
    if (cmd_buffer->state.push_constants_dirty & VK_SHADER_STAGE_COMPUTE_BIT) {
-
+#if GFX_VERx10 >= 125
+      if (comp_state->base.push_constants_state.alloc_size == 0 ||
+          comp_state->base.push_constants_data_dirty) {
+         comp_state->base.push_constants_state =
+            anv_cmd_buffer_cs_push_constants(cmd_buffer);
+         comp_state->base.push_constants_data_dirty = false;
+      }
+      if (comp_state->base.driver_constants_state.alloc_size == 0 ||
+          comp_state->base.driver_constants_data_dirty) {
+         comp_state->base.driver_constants_state =
+            anv_cmd_buffer_driver_constants(cmd_buffer, &comp_state->base);
+         comp_state->base.driver_constants_data_dirty = false;
+      }
+#else
       if (comp_state->base.push_constants_state.alloc_size == 0 ||
           comp_state->base.push_constants_data_dirty ||
           comp_state->base.driver_constants_data_dirty) {
@@ -189,6 +202,7 @@ genX(cmd_buffer_flush_compute_state)(struct anv_cmd_buffer *cmd_buffer)
          comp_state->base.push_constants_data_dirty = false;
          comp_state->base.driver_constants_data_dirty = false;
       }
+#endif
 
 #if GFX_VERx10 < 125
       if (comp_state->base.push_constants_state.alloc_size) {
@@ -296,8 +310,35 @@ get_push_constants_address(struct anv_cmd_buffer *cmd_buffer,
                            const struct anv_shader_bin *shader)
 {
    struct anv_cmd_compute_state *comp_state = &cmd_buffer->state.compute;
+   const struct anv_push_range *range =
+      shader->bind_map.push_ranges[0].set == ANV_DESCRIPTOR_SET_PUSH_CONSTANTS ?
+      &shader->bind_map.push_ranges[0] : NULL;
+   if (range == NULL)
+      return ANV_NULL_ADDRESS;
    return anv_state_pool_state_address(&cmd_buffer->device->general_state_pool,
                                        comp_state->base.push_constants_state);
+}
+
+static inline struct anv_state
+driver_constants_state(struct anv_cmd_buffer *cmd_buffer)
+{
+   struct anv_cmd_compute_state *comp_state = &cmd_buffer->state.compute;
+   struct anv_compute_pipeline *pipeline =
+      anv_pipeline_to_compute(comp_state->base.pipeline);
+   const struct anv_push_range *range =
+      pipeline->cs->bind_map.push_ranges[0].set == ANV_DESCRIPTOR_SET_DRIVER_CONSTANTS ?
+      &pipeline->cs->bind_map.push_ranges[0] :
+      pipeline->cs->bind_map.push_ranges[1].set == ANV_DESCRIPTOR_SET_DRIVER_CONSTANTS ?
+      &pipeline->cs->bind_map.push_ranges[1] : NULL;
+   struct anv_state state = comp_state->base.driver_constants_state;
+
+   if (range) {
+      state.offset += range->start_B;
+      state.map += range->start_B;
+      state.alloc_size -= range->start_B;
+   }
+
+   return state;
 }
 
 static inline void
@@ -315,9 +356,12 @@ emit_indirect_compute_walker(struct anv_cmd_buffer *cmd_buffer,
       brw_cs_get_dispatch_info(devinfo, prog_data, NULL);
    const int dispatch_size = dispatch.simd_size / 16;
 
+   struct anv_state driver_constants = driver_constants_state(cmd_buffer);
    struct GENX(COMPUTE_WALKER_BODY) body =  {
       .SIMDSize                 = dispatch_size,
       .MessageSIMD              = dispatch_size,
+      .IndirectDataStartAddress = driver_constants.offset,
+      .IndirectDataLength       = driver_constants.alloc_size,
       .LocalXMaximum            = prog_data->local_size[0] - 1,
       .LocalYMaximum            = prog_data->local_size[1] - 1,
       .LocalZMaximum            = prog_data->local_size[2] - 1,
@@ -359,6 +403,7 @@ emit_compute_walker(struct anv_cmd_buffer *cmd_buffer,
    const struct intel_device_info *devinfo = pipeline->base.device->info;
    const struct intel_cs_dispatch_info dispatch =
       brw_cs_get_dispatch_info(devinfo, prog_data, NULL);
+   struct anv_state driver_constants = driver_constants_state(cmd_buffer);
 
    cmd_buffer->last_compute_walker =
       anv_batch_emit_dwords(&cmd_buffer->batch,
@@ -371,6 +416,8 @@ emit_compute_walker(struct anv_cmd_buffer *cmd_buffer,
       .PredicateEnable                = predicate,
       .SIMDSize                       = dispatch.simd_size / 16,
       .MessageSIMD                    = dispatch.simd_size / 16,
+      .IndirectDataStartAddress       = driver_constants.offset,
+      .IndirectDataLength             = driver_constants.alloc_size,
 #if GFX_VERx10 == 125
       .SystolicModeEnable             = prog_data->uses_systolic,
 #endif

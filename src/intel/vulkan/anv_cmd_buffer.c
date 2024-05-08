@@ -1207,20 +1207,13 @@ anv_cmd_buffer_gfx_push_constants(struct anv_cmd_buffer *cmd_buffer)
 
    struct anv_state state =
       anv_cmd_buffer_alloc_temporary_state(cmd_buffer,
-                                           sizeof(pipe_state->push_constants) +
-                                           sizeof(pipe_state->driver_constants),
+                                           sizeof(pipe_state->push_constants),
                                            32 /* bottom 5 bits MBZ */);
    if (state.alloc_size == 0)
       return state;
 
-   /* Copy the application push constants and the driver constants behind
-    * it.
-    */
    memcpy(state.map, pipe_state->push_constants,
           sizeof(pipe_state->push_constants));
-   memcpy(state.map + sizeof(pipe_state->push_constants),
-          &pipe_state->driver_constants,
-          sizeof(pipe_state->driver_constants));
 
    return state;
 }
@@ -1281,6 +1274,23 @@ anv_cmd_buffer_cs_push_constants(struct anv_cmd_buffer *cmd_buffer)
          dst += cs_prog_data->push.per_thread.size;
       }
    }
+
+   return state;
+}
+
+struct anv_state
+anv_cmd_buffer_driver_constants(struct anv_cmd_buffer *cmd_buffer,
+                                struct anv_cmd_pipeline_state *pipe_state)
+{
+   struct anv_state state =
+      anv_state_stream_alloc(&cmd_buffer->general_state_stream,
+                             align(sizeof(pipe_state->driver_constants), 32),
+                             64);
+   if (state.map == NULL)
+      return state;
+
+   memcpy(state.map, &pipe_state->driver_constants,
+          sizeof(pipe_state->driver_constants));
 
    return state;
 }
