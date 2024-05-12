@@ -2177,27 +2177,29 @@ fs_visitor::assign_constant_locations()
     *
     * If changing this value, note the limitation about total_regs in
     * brw_curbe.c/crocus_state.c
+    *
+    * This only applies to stages using 3DSTATE_CONSTANT instructions.
     */
-   const unsigned max_push_length_B = 64 * REG_SIZE;
-   unsigned push_length_B =
-      REG_SIZE * reg_unit(devinfo) *
-      round_components_to_whole_registers(devinfo, prog_data->nr_params);
-   for (int i = 0; i < 4; i++) {
-      struct brw_ubo_range *range = &prog_data->ubo_ranges[i];
+   if (brw_shader_stage_can_push_ubo(stage)) {
+      const unsigned max_push_length_B = 64 * REG_SIZE;
+      unsigned push_length_B =
+         REG_SIZE * reg_unit(devinfo) *
+         round_components_to_whole_registers(devinfo, prog_data->nr_params);
+      for (int i = 0; i < 4; i++) {
+         struct brw_ubo_range *range = &prog_data->ubo_ranges[i];
 
-      if (push_length_B + range->length_B > max_push_length_B)
-         range->length_B = max_push_length_B - push_length_B;
+         if (push_length_B + range->length_B > max_push_length_B)
+            range->length_B = max_push_length_B - push_length_B;
 
-      push_length_B += range->length_B;
+         push_length_B += range->length_B;
 
-      assert(push_length_B % (REG_SIZE * reg_unit(devinfo)) == 0);
+         if (range->length_B > 0)
+            append_constant_range(range->block, 0, range->length_B);
 
-      if (range->length_B > 0)
-         append_constant_range(range->block, 0, range->length_B);
+         assert(push_length_B % (REG_SIZE * reg_unit(devinfo)) == 0);
+      }
+      assert(push_length_B <= max_push_length_B);
    }
-   assert(push_length_B <= max_push_length_B);
-
-   constants_assigned = true;
 }
 
 bool

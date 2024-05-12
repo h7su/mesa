@@ -160,6 +160,13 @@ brw_shader_stage_requires_bindless_resources(gl_shader_stage stage)
    return brw_shader_stage_is_bindless(stage) || gl_shader_stage_is_mesh(stage);
 }
 
+static inline bool
+brw_shader_stage_can_push_ubo(gl_shader_stage stage)
+{
+   return stage != MESA_SHADER_COMPUTE &&
+          !brw_shader_stage_requires_bindless_resources(stage);
+}
+
 static inline uint32_t
 brw_shader_stage_push_constant_alignment(const struct intel_device_info *devinfo,
                                          gl_shader_stage stage)
