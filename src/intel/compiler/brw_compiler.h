@@ -372,9 +372,8 @@ struct brw_ubo_range
 {
    uint16_t block;
 
-   /* In units of 32-byte registers */
-   uint8_t start;
-   uint8_t length;
+   uint16_t start_B;
+   uint16_t length_B;
 };
 
 /* We reserve the first 2^16 values for builtins */

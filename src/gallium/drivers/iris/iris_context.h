@@ -310,10 +310,8 @@ PRAGMA_DIAGNOSTIC_POP
 struct iris_ubo_range
 {
    uint16_t block;
-
-   /* In units of 32-byte registers */
-   uint8_t start;
-   uint8_t length;
+   uint16_t start_B;
+   uint16_t length_B;
 };
 
 struct iris_fs_data {

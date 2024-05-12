@@ -6215,20 +6215,19 @@ fs_nir_emit_intrinsic(nir_to_brw_state &ntb,
          const unsigned load_offset = nir_src_as_uint(instr->src[1]);
          const unsigned ubo_block =
             brw_nir_ubo_surface_index_get_push_block(instr->src[0]);
-         const unsigned offset_256b = load_offset / 32;
-         const unsigned end_256b =
-            DIV_ROUND_UP(load_offset + type_size * instr->num_components, 32);
+         const unsigned load_end =
+            load_offset + type_size * instr->num_components;
 
          /* See if we've selected this as a push constant candidate */
          fs_reg push_reg;
          for (int i = 0; i < 4; i++) {
             const struct brw_ubo_range *range = &s.prog_data->ubo_ranges[i];
             if (range->block == ubo_block &&
-                offset_256b >= range->start &&
-                end_256b <= range->start + range->length) {
+                load_offset >= range->start_B &&
+                load_end <= range->start_B + range->length_B) {
 
                push_reg = fs_reg(UNIFORM, UBO_START + i, dest.type);
-               push_reg.offset = load_offset - 32 * range->start;
+               push_reg.offset = load_offset - range->start_B;
                break;
             }
          }

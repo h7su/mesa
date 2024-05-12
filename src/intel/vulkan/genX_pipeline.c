@@ -1602,7 +1602,7 @@ emit_3dstate_ps(struct anv_graphics_pipeline *pipeline,
       ps.BindingTableEntryCount     = fs_bin->bind_map.surface_count;
 #if GFX_VER < 20
       ps.PushConstantEnable         = wm_prog_data->base.nr_params > 0 ||
-                                      wm_prog_data->base.ubo_ranges[0].length;
+                                      wm_prog_data->base.ubo_ranges[0].length_B;
 #endif
 
       ps.MaximumNumberofThreadsPerPSD = devinfo->max_threads_per_psd - 1;

@@ -170,15 +170,15 @@ anv_nir_compute_push_layout(nir_shader *nir,
    if (push_ubo_ranges) {
       brw_nir_analyze_ubo_ranges(compiler, nir, prog_data->ubo_ranges);
 
-      const unsigned max_push_regs = 64;
+      const unsigned max_push_size = 64 * 32;
 
-      unsigned total_push_regs = push_constant_range.length_B / 32;
+      unsigned total_push_size = push_constant_range.length_B;
       for (unsigned i = 0; i < 4; i++) {
-         if (total_push_regs + prog_data->ubo_ranges[i].length > max_push_regs)
-            prog_data->ubo_ranges[i].length = max_push_regs - total_push_regs;
-         total_push_regs += prog_data->ubo_ranges[i].length;
+         if (total_push_size + prog_data->ubo_ranges[i].length_B > max_push_size)
+            prog_data->ubo_ranges[i].length_B = max_push_size - total_push_size;
+         total_push_size += align(prog_data->ubo_ranges[i].length_B, 32);
       }
-      assert(total_push_regs <= max_push_regs);
+      assert(total_push_size <= max_push_size);
 
       int n = 0;
 
@@ -197,7 +197,7 @@ anv_nir_compute_push_layout(nir_shader *nir,
 
       for (int i = 0; i < 4; i++) {
          struct brw_ubo_range *ubo_range = &prog_data->ubo_ranges[i];
-         if (ubo_range->length == 0)
+         if (ubo_range->length_B == 0)
             continue;
 
          if (n >= 4) {
@@ -213,18 +213,18 @@ anv_nir_compute_push_layout(nir_shader *nir,
             .set = binding->set,
             .index = binding->index,
             .dynamic_offset_index = binding->dynamic_offset_index,
-            .start_B = ubo_range->start * 32,
-            .length_B = ubo_range->length * 32,
+            .start_B = ubo_range->start_B,
+            .length_B = ubo_range->length_B,
          };
 
          /* We only bother to shader-zero pushed client UBOs */
          if (binding->set < MAX_SETS &&
              (robust_flags & BRW_ROBUSTNESS_UBO)) {
-            prog_data->zero_push_reg |= BITFIELD64_RANGE(range_start_reg,
-                                                         ubo_range->length);
+            prog_data->zero_push_reg |= BITFIELD64_RANGE(
+               range_start_reg, DIV_ROUND_UP(ubo_range->length_B, 32));
          }
 
-         range_start_reg += ubo_range->length;
+         range_start_reg += DIV_ROUND_UP(ubo_range->length_B, 32);
       }
    } else {
       /* For Ivy Bridge, the push constants packets have a different
@@ -275,7 +275,7 @@ anv_nir_validate_push_layout(struct brw_stage_prog_data *prog_data,
 #ifndef NDEBUG
    unsigned prog_data_push_size = prog_data->nr_params * 4;
    for (unsigned i = 0; i < 4; i++)
-      prog_data_push_size += prog_data->ubo_ranges[i].length * 32;
+      prog_data_push_size += prog_data->ubo_ranges[i].length_B;
 
    unsigned bind_map_push_size = 0;
    for (unsigned i = 0; i < 4; i++)

@@ -1222,7 +1222,7 @@ fs_visitor::assign_curb_setup()
    unsigned ubo_push_start[4];
    for (int i = 0; i < 4; i++) {
       ubo_push_start[i] = 8 * (ubo_push_length + uniform_push_length);
-      ubo_push_length += prog_data->ubo_ranges[i].length;
+      ubo_push_length += DIV_ROUND_UP(prog_data->ubo_ranges[i].length_B, 32);
 
       assert(ubo_push_start[i] % (8 * reg_unit(devinfo)) == 0);
       assert(ubo_push_length % (1 * reg_unit(devinfo)) == 0);
@@ -1974,21 +1974,22 @@ fs_visitor::assign_constant_locations()
     * If changing this value, note the limitation about total_regs in
     * brw_curbe.c/crocus_state.c
     */
-   const unsigned max_push_length = 64;
-   unsigned push_length =
+   const unsigned max_push_length_B = 64 * REG_SIZE;
+   unsigned push_length_B =
+      REG_SIZE * reg_unit(devinfo) *
       round_components_to_whole_registers(devinfo, prog_data->nr_params);
    for (int i = 0; i < 4; i++) {
       struct brw_ubo_range *range = &prog_data->ubo_ranges[i];
 
-      if (push_length + range->length > max_push_length)
-         range->length = max_push_length - push_length;
+      if (push_length_B + range->length_B > max_push_length_B)
+         range->length_B = max_push_length_B - push_length_B;
 
-      push_length += range->length;
+      push_length_B += range->length_B;
 
-      assert(push_length % (1 * reg_unit(devinfo)) == 0);
+      assert(push_length_B % (REG_SIZE * reg_unit(devinfo)) == 0);
 
    }
-   assert(push_length <= max_push_length);
+   assert(push_length_B <= max_push_length_B);
 }
 
 bool
@@ -2005,11 +2006,11 @@ fs_visitor::get_pull_locs(const fs_reg &src,
       &prog_data->ubo_ranges[src.nr - UBO_START];
 
    /* If this access is in our (reduced) range, use the push data. */
-   if (src.offset / 32 < range->length)
+   if (src.offset < range->length_B)
       return false;
 
    *out_surf_index = range->block;
-   *out_pull_index = (32 * range->start + src.offset) / 4;
+   *out_pull_index = (range->start_B + src.offset) / 4;
 
    prog_data->has_ubo_pull = true;
 
