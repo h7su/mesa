@@ -109,16 +109,18 @@ anv_nir_compute_push_layout(nir_shader *nir,
        * the shader.
        */
       const uint32_t push_reg_mask_start =
-         offsetof(struct anv_push_constants, push_reg_mask[nir->info.stage]);
-      const uint32_t push_reg_mask_end = push_reg_mask_start + sizeof(uint64_t);
+         anv_drv_const_offset(push_reg_mask[nir->info.stage]);
+      const uint32_t push_reg_mask_end = push_reg_mask_start +
+                                         anv_drv_const_size(push_reg_mask[nir->info.stage]);
       push_start = MIN2(push_start, push_reg_mask_start);
       push_end = MAX2(push_end, push_reg_mask_end);
    }
 
    if (nir->info.stage == MESA_SHADER_FRAGMENT && fragment_dynamic) {
       const uint32_t fs_msaa_flags_start =
-         offsetof(struct anv_push_constants, gfx.fs_msaa_flags);
-      const uint32_t fs_msaa_flags_end = fs_msaa_flags_start + sizeof(uint32_t);
+         anv_drv_const_offset(gfx.fs_msaa_flags);
+      const uint32_t fs_msaa_flags_end = fs_msaa_flags_start +
+                                         anv_drv_const_size(gfx.fs_msaa_flags);
       push_start = MIN2(push_start, fs_msaa_flags_start);
       push_end = MAX2(push_end, fs_msaa_flags_end);
    }
@@ -131,8 +133,8 @@ anv_nir_compute_push_layout(nir_shader *nir,
        * push constants one dword less than the full amount including
        * gl_SubgroupId.
        */
-      assert(push_end <= offsetof(struct anv_push_constants, cs.subgroup_id));
-      push_end = offsetof(struct anv_push_constants, cs.subgroup_id);
+      assert(push_end <= anv_drv_const_offset(cs.subgroup_id));
+      push_end = anv_drv_const_offset(cs.subgroup_id);
    }
 
    /* Align push_start down to a 32B boundary and make it no larger than
