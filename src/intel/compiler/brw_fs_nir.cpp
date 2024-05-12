@@ -4129,6 +4129,10 @@ fs_nir_emit_fs_intrinsic(nir_to_brw_state &ntb,
       break;
    }
 
+   case nir_intrinsic_load_fs_msaa_intel:
+      bld.MOV(dest, dynamic_msaa_flags(brw_wm_prog_data(s.prog_data)));
+      break;
+
    default:
       fs_nir_emit_intrinsic(ntb, bld, instr);
       break;
