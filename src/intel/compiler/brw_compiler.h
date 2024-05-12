@@ -368,12 +368,27 @@ PRAGMA_DIAGNOSTIC_POP
 /** Max number of render targets in a shader */
 #define BRW_MAX_DRAW_BUFFERS 8
 
+/** Indicates that the range is pointing at driver internal push constants. */
+#define BRW_UBO_RANGE_PUSH_CONSTANT   (UINT16_MAX - 0)
+
 struct brw_ubo_range
 {
    uint16_t block;
 
    uint16_t start_B;
    uint16_t length_B;
+};
+
+/* Pushed shader parameter */
+struct brw_push_param {
+   /* Block in which the parameter is located (matches one of
+    * brw_ubo_range::block), or BRW_UBO_RANGE_PUSH_CONSTANT if it is one of
+    * the uniform not accounted in any of brw_ubo_range.
+    */
+   uint16_t block;
+
+   /* Offset in bytes within the range */
+   uint16_t offset_B;
 };
 
 /* We reserve the first 2^16 values for builtins */
@@ -522,7 +537,7 @@ struct brw_stage_prog_data {
     * If this field is set, brw_compiler::compact_params must be false.
     */
    uint64_t zero_push_reg;
-   unsigned push_reg_mask_param;
+   struct brw_push_param push_reg_mask_param;
 
    unsigned curb_read_length;
    unsigned total_scratch;
@@ -692,7 +707,7 @@ struct brw_wm_prog_data {
     */
    enum brw_sometimes alpha_to_coverage;
 
-   unsigned msaa_flags_param;
+   struct brw_push_param msaa_flags_param;
 
    /**
     * Mask of which interpolation modes are required by the fragment shader.

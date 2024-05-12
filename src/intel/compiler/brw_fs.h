@@ -545,9 +545,49 @@ namespace brw {
    fetch_barycentric_reg(const brw::fs_builder &bld, uint8_t regs[2]);
 
    inline fs_reg
+   prog_uniform_reg(const struct brw_stage_prog_data *prog_data,
+                    unsigned block, unsigned offset_B, unsigned length_B,
+                    brw_reg_type type)
+   {
+      if (block == BRW_UBO_RANGE_PUSH_CONSTANT)
+         return fs_reg(UNIFORM, offset_B / 4, BRW_TYPE_UD);
+
+      int range_idx = -1;
+      for (unsigned i = 0; i < ARRAY_SIZE(prog_data->ubo_ranges); i++) {
+         const struct brw_ubo_range *range = &prog_data->ubo_ranges[i];
+         if (range->block == block &&
+             offset_B >= range->start_B &&
+             offset_B + length_B <= range->start_B + range->length_B) {
+            range_idx = i;
+            break;
+         }
+      }
+      if (range_idx == -1)
+         return fs_reg();
+
+      fs_reg r = fs_reg(UNIFORM, UBO_START + range_idx, type);
+      r.offset = offset_B - prog_data->ubo_ranges[range_idx].start_B;
+      return r;
+   }
+
+   inline fs_reg
+   prog_param_reg(const struct brw_stage_prog_data *prog_data,
+                  const struct brw_push_param &param)
+   {
+      fs_reg r;
+      if (param.block == BRW_UBO_RANGE_PUSH_CONSTANT) {
+         r = fs_reg(UNIFORM, param.offset_B / 4, BRW_TYPE_UD);
+         r.offset += param.offset_B % 4;
+      } else {
+         r = prog_uniform_reg(prog_data, param.block, param.offset_B, 4, BRW_TYPE_UD);
+      }
+      return r;
+   }
+
+   inline fs_reg
    dynamic_msaa_flags(const struct brw_wm_prog_data *wm_prog_data)
    {
-      return fs_reg(UNIFORM, wm_prog_data->msaa_flags_param, BRW_TYPE_UD);
+      return prog_param_reg(&wm_prog_data->base, wm_prog_data->msaa_flags_param);
    }
 
    void

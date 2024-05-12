@@ -1343,9 +1343,10 @@ fs_visitor::assign_curb_setup()
          cfg->first_block(), cfg->first_block()->start());
 
       /* push_reg_mask_param is in 32-bit units */
-      unsigned mask_param = prog_data->push_reg_mask_param;
-      struct brw_reg mask = brw_vec1_grf(payload().num_regs + mask_param / 8,
-                                                              mask_param % 8);
+      assert(prog_data->push_reg_mask_param.block == BRW_UBO_RANGE_PUSH_CONSTANT);
+      struct fs_reg mask =
+         byte_offset(brw_vec1_grf(payload().num_regs, 0),
+                     prog_data->push_reg_mask_param.offset_B);
 
       fs_reg b32;
       for (unsigned i = 0; i < 64; i++) {

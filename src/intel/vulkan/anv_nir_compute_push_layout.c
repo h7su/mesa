@@ -189,8 +189,10 @@ anv_nir_compute_push_layout(nir_shader *nir,
          const uint32_t push_reg_mask_offset =
             offsetof(struct anv_push_constants, push_reg_mask[nir->info.stage]);
          assert(push_reg_mask_offset >= push_start);
-         prog_data->push_reg_mask_param =
-            (push_reg_mask_offset - push_start) / 4;
+         prog_data->push_reg_mask_param = (struct brw_push_param) {
+            .block    = BRW_UBO_RANGE_PUSH_CONSTANT,
+            .offset_B = push_reg_mask_offset - push_start,
+         };
       }
 
       unsigned range_start_reg = push_constant_range.length_B / 32;
@@ -245,8 +247,10 @@ anv_nir_compute_push_layout(nir_shader *nir,
       const uint32_t fs_msaa_flags_offset =
          offsetof(struct anv_push_constants, gfx.fs_msaa_flags);
       assert(fs_msaa_flags_offset >= push_start);
-      wm_prog_data->msaa_flags_param =
-         (fs_msaa_flags_offset - push_start) / 4;
+      wm_prog_data->msaa_flags_param = (struct brw_push_param) {
+         .block    = BRW_UBO_RANGE_PUSH_CONSTANT,
+         .offset_B = fs_msaa_flags_offset - push_start,
+      };
    }
 
 #if 0
