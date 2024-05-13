@@ -9,13 +9,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define BIT(b)         (1ull << (b))
-#define MASK(count)    ((1ull << (count)) - 1)
-#define SEXT(b, count) ((b ^ BIT(count - 1)) - BIT(count - 1))
-#define UNUSED         __attribute__((unused))
-
-#define VA_SRC_UNIFORM_TYPE 0x2
-#define VA_SRC_IMM_TYPE     0x3
+#define VA_MASK(count) ((1ull << (count)) - 1)
 
 static inline void
 va_print_dest(FILE *fp, uint8_t dest, bool can_mask)
@@ -63,7 +57,7 @@ disassemble_valhall(FILE *fp, const uint64_t *code, unsigned size, bool verbose)
       fprintf(fp, "\n");
 
       /* Detect branches */
-      uint64_t opcode = (instr >> 48) & MASK(9);
+      uint64_t opcode = (instr >> 48) & VA_MASK(9);
       bool branchz = (opcode == 0x1F);
       bool branchzi = (opcode == 0x2F);
 

@@ -28,6 +28,13 @@ from mako import exceptions
 template = """
 #include "disassemble.h"
 
+#define BIT(b)         (1ull << (b))
+#define SEXT(b, count) ((b ^ BIT(count - 1)) - BIT(count - 1))
+#define UNUSED         __attribute__((unused))
+
+#define VA_SRC_UNIFORM_TYPE 0x2
+#define VA_SRC_IMM_TYPE     0x3
+
 % for name, en in ENUMS.items():
 UNUSED static const char *valhall_${name}[] = {
 % for v in en.values:
@@ -94,8 +101,8 @@ va_print_float_src(FILE *fp, uint8_t src, unsigned fau_page, bool neg, bool abs)
 void
 va_disasm_instr(FILE *fp, uint64_t instr)
 {
-   unsigned primary_opc = (instr >> 48) & MASK(9);
-   unsigned fau_page = (instr >> 57) & MASK(2);
+   unsigned primary_opc = (instr >> 48) & VA_MASK(9);
+   unsigned fau_page = (instr >> 57) & VA_MASK(2);
    unsigned secondary_opc = 0;
 
    switch (primary_opc) {
@@ -141,9 +148,9 @@ va_disasm_instr(FILE *fp, uint64_t instr)
     if sr.count != 0:
         sr_count = sr.count
     elif "staging_register_write_count" in [x.name for x in op.modifiers] and sr.write:
-        sr_count = "(((instr >> 36) & MASK(3)) + 1)"
+        sr_count = "(((instr >> 36) & VA_MASK(3)) + 1)"
     elif "staging_register_count" in [x.name for x in op.modifiers]:
-        sr_count = "((instr >> 33) & MASK(3))"
+        sr_count = "((instr >> 33) & VA_MASK(3))"
     else:
         assert(0)
 %>
@@ -197,7 +204,7 @@ va_disasm_instr(FILE *fp, uint64_t instr)
     fmt = "%d" if imm.signed else "0x%X"
 %>
             fprintf(fp, ", ${prefix}${fmt}", (uint32_t) ${"SEXT(" if imm.signed else ""}
-                    ((instr >> ${imm.start}) & MASK(${imm.size})) ${f", {imm.size})" if imm.signed else ""});
+                    ((instr >> ${imm.start}) & VA_MASK(${imm.size})) ${f", {imm.size})" if imm.signed else ""});
 % endfor
 % if ambiguous:
         }
