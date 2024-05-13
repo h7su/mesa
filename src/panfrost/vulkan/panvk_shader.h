@@ -79,6 +79,9 @@ struct panvk_shader {
 
    mali_ptr upload_addr;
    uint32_t upload_size;
+
+   const char *nir_str;
+   const char *asm_str;
 };
 
 bool panvk_per_arch(blend_needs_lowering)(const struct panvk_device *dev,
