@@ -4989,6 +4989,9 @@ bifrost_preprocess_nir(nir_shader *nir, unsigned gpu_id)
    NIR_PASS_V(nir, nir_lower_frag_coord_to_pixel_coord);
 }
 
+void bifrost_disassemble(FILE *fp, const void *code, size_t size, unsigned arch,
+                         bool verbose);
+
 static bi_context *
 bi_compile_variant_nir(nir_shader *nir,
                        const struct panfrost_compile_inputs *inputs,
@@ -5215,15 +5218,8 @@ bi_compile_variant_nir(nir_shader *nir,
    }
 
    if (bifrost_debug & BIFROST_DBG_SHADERS && !skip_internal) {
-      if (ctx->arch <= 8) {
-         disassemble_bifrost(stdout, binary->data + offset,
-                             binary->size - offset,
-                             bifrost_debug & BIFROST_DBG_VERBOSE);
-      } else {
-         disassemble_valhall(stdout, binary->data + offset,
-                             binary->size - offset,
-                             bifrost_debug & BIFROST_DBG_VERBOSE);
-      }
+      bifrost_disassemble(stdout, binary->data + offset, binary->size - offset,
+                          ctx->arch, bifrost_debug & BIFROST_DBG_VERBOSE);
 
       fflush(stdout);
    }
@@ -5401,4 +5397,14 @@ bifrost_compile_shader_nir(nir_shader *nir,
    }
 
    info->ubo_mask &= (1 << nir->info.num_ubos) - 1;
+}
+
+void
+bifrost_disassemble(FILE *fp, const void *code, size_t size, unsigned arch,
+                    bool verbose)
+{
+   if (arch <= 8)
+      disassemble_bifrost(fp, code, size, verbose);
+   else
+      disassemble_valhall(fp, code, size, verbose);
 }

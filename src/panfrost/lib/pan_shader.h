@@ -43,6 +43,21 @@ pan_shader_preprocess(nir_shader *nir, unsigned gpu_id)
       midgard_preprocess_nir(nir, gpu_id);
 }
 
+void bifrost_disassemble(FILE *fp, const void *code, size_t size, unsigned arch,
+                         bool verbose);
+void disassemble_midgard(FILE *fp, const void *code, size_t size,
+                         unsigned gpu_id, bool verbose);
+
+static inline void
+pan_shader_disassemble(FILE *fp, const void *code, size_t size, unsigned gpu_id,
+                       bool verbose)
+{
+   if (pan_arch(gpu_id) >= 6)
+      bifrost_disassemble(fp, code, size, pan_arch(gpu_id), verbose);
+   else
+      disassemble_midgard(fp, code, size, gpu_id, verbose);
+}
+
 uint8_t pan_raw_format_mask_midgard(enum pipe_format *formats);
 
 #ifdef PAN_ARCH
