@@ -15,8 +15,6 @@
 #include <vulkan/vulkan_core.h>
 #include "vk_descriptor_set_layout.h"
 
-#include "util/mesa-sha1.h"
-
 #include "panvk_macros.h"
 
 #define MAX_SETS 4
@@ -56,11 +54,6 @@ void panvk_per_arch(shader_set_layout_fill)(
    struct vk_descriptor_set_layout *const *set_layouts,
    unsigned push_constant_range_count,
    const VkPushConstantRange *push_constant_ranges);
-
-void panvk_per_arch(shader_set_layout_hash_state)(
-   const struct panvk_shader_set_layout *layout,
-   struct vk_descriptor_set_layout *const *set_layouts,
-   struct mesa_sha1 *sha1_ctx);
 
 unsigned panvk_per_arch(shader_set_layout_ubo_start)(
    const struct panvk_shader_set_layout *layout, unsigned set, bool is_dynamic);
