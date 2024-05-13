@@ -19,7 +19,6 @@
 #include "panvk_device.h"
 #include "panvk_macros.h"
 #include "panvk_mempool.h"
-#include "panvk_pipeline.h"
 #include "panvk_shader.h"
 #include "panvk_shader_set_layout.h"
 
@@ -35,6 +34,7 @@
 #define MAX_SETS                    4
 #define MAX_DYNAMIC_UNIFORM_BUFFERS 16
 #define MAX_DYNAMIC_STORAGE_BUFFERS 8
+#define MAX_RTS                     8
 
 struct panvk_batch {
    struct list_head node;
