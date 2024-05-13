@@ -16,6 +16,7 @@
 
 #include "panvk_descriptor_set.h"
 #include "panvk_macros.h"
+#include "panvk_priv_bo.h"
 #include "panvk_shader_set_layout.h"
 
 #define MAX_VS_ATTRIBS 16
@@ -68,6 +69,11 @@ struct panvk_shader {
 
    const void *bin_ptr;
    uint32_t bin_size;
+
+   struct panvk_priv_bo *upload_bo;
+
+   mali_ptr upload_addr;
+   uint32_t upload_size;
 };
 
 bool panvk_per_arch(blend_needs_lowering)(const struct panvk_device *dev,

@@ -196,6 +196,31 @@ shared_type_info(const struct glsl_type *type, unsigned *size, unsigned *align)
    *size = comp_size * length, *align = comp_size * (length == 3 ? 4 : length);
 }
 
+static VkResult
+panvk_shader_upload(struct panvk_device *dev, struct panvk_shader *shader,
+                    const VkAllocationCallbacks *pAllocator)
+{
+   uint32_t code_sz = ALIGN(shader->bin_size, 128);
+
+   if (code_sz > 0) {
+      /* TODO: Upload shader in a Vulkan device wide shader pool */
+      shader->upload_bo =
+         panvk_priv_bo_create(dev, code_sz, PAN_KMOD_BO_FLAG_EXECUTABLE,
+                              pAllocator, VK_SYSTEM_ALLOCATION_SCOPE_DEVICE);
+
+      if (shader->upload_bo == NULL)
+         return vk_error(dev, VK_ERROR_OUT_OF_DEVICE_MEMORY);
+
+      memcpy(shader->upload_bo->addr.host, shader->bin_ptr, shader->bin_size);
+      shader->upload_addr = shader->upload_bo->addr.dev;
+      shader->upload_size = code_sz;
+   }
+
+   shader->upload_size = code_sz;
+
+   return VK_SUCCESS;
+}
+
 struct panvk_shader *
 panvk_per_arch(shader_create)(
    struct panvk_device *dev, const VkPipelineShaderStageCreateInfo *stage_info,
@@ -426,6 +451,13 @@ panvk_per_arch(shader_create)(
    shader->local_size.y = nir->info.workgroup_size[1];
    shader->local_size.z = nir->info.workgroup_size[2];
 
+   result = panvk_shader_upload(dev, shader, alloc);
+
+   if (result != VK_SUCCESS) {
+      panvk_per_arch(shader_destroy)(dev, shader, alloc);
+      return NULL;
+   }
+
    ralloc_free(nir);
 
    return shader;
@@ -436,6 +468,10 @@ panvk_per_arch(shader_destroy)(struct panvk_device *dev,
                                struct panvk_shader *shader,
                                const VkAllocationCallbacks *alloc)
 {
+   if (shader->upload_size > 0) {
+      panvk_priv_bo_destroy(shader->upload_bo, alloc);
+   }
+
    free((void *)shader->bin_ptr);
    vk_free2(&dev->vk.alloc, alloc, shader);
 }
