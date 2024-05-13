@@ -18,7 +18,7 @@
 
 #include "panvk_descriptor_set.h"
 #include "panvk_macros.h"
-#include "panvk_pipeline_layout.h"
+#include "panvk_shader_set_layout.h"
 
 #define MAX_VS_ATTRIBS 16
 
@@ -75,7 +75,8 @@ bool panvk_per_arch(blend_needs_lowering)(const struct panvk_device *dev,
 
 struct panvk_shader *panvk_per_arch(shader_create)(
    struct panvk_device *dev, const VkPipelineShaderStageCreateInfo *stage_info,
-   const struct panvk_pipeline_layout *layout,
+   struct vk_descriptor_set_layout *const *set_layouts,
+   const struct panvk_shader_set_layout *layout,
    const VkAllocationCallbacks *alloc);
 
 void panvk_per_arch(shader_destroy)(struct panvk_device *dev,
@@ -85,7 +86,8 @@ void panvk_per_arch(shader_destroy)(struct panvk_device *dev,
 struct panvk_lower_desc_inputs {
    const struct panvk_device *dev;
    const struct panfrost_compile_inputs *compile_inputs;
-   const struct panvk_pipeline_layout *layout;
+   struct vk_descriptor_set_layout *const *set_layouts;
+   const struct panvk_shader_set_layout *layout;
 };
 
 bool panvk_per_arch(nir_lower_descriptors)(
