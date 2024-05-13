@@ -77,6 +77,7 @@ struct panvk_cmd_event_op {
 };
 
 struct panvk_descriptor_state {
+   struct panvk_shader_set_layout shader_layout;
    const struct panvk_descriptor_set *sets[MAX_SETS];
    struct panvk_push_descriptor_set *push_sets[MAX_SETS];
 

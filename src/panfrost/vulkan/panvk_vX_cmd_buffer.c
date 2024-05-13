@@ -39,7 +39,6 @@
 #include "panvk_instance.h"
 #include "panvk_physical_device.h"
 #include "panvk_pipeline.h"
-#include "panvk_pipeline_layout.h"
 #include "panvk_priv_bo.h"
 #include "panvk_shader_set_layout.h"
 
@@ -56,6 +55,7 @@
 
 #include "vk_descriptor_update_template.h"
 #include "vk_format.h"
+#include "vk_pipeline_layout.h"
 
 struct panvk_draw_info {
    unsigned first_index;
@@ -350,22 +350,21 @@ panvk_cmd_prepare_push_uniforms(struct panvk_cmd_buffer *cmdbuf,
 
 static void
 panvk_cmd_prepare_push_sets(struct panvk_cmd_buffer *cmdbuf,
-                            struct panvk_descriptor_state *desc_state,
-                            const struct panvk_pipeline *pipeline)
+                            struct panvk_descriptor_state *desc_state)
 {
-   const struct panvk_pipeline_layout *playout = pipeline->layout;
+   for (unsigned i = 0; i < ARRAY_SIZE(desc_state->push_sets); i++) {
+      if (!desc_state->push_sets[i])
+         continue;
 
-   for (unsigned i = 0; i < playout->vk.set_count; i++) {
-      const struct panvk_descriptor_set_layout *slayout =
-         vk_to_panvk_descriptor_set_layout(playout->vk.set_layouts[i]);
+      struct panvk_descriptor_set *set = &desc_state->push_sets[i]->set;
+      const struct panvk_descriptor_set_layout *slayout = set->layout;
+
       bool is_push_set =
          slayout->flags &
          VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT_KHR;
 
-      if (desc_state->sets[i] || !is_push_set || !desc_state->push_sets[i])
+      if (desc_state->sets[i] || !is_push_set)
          continue;
-
-      struct panvk_descriptor_set *set = &desc_state->push_sets[i]->set;
 
       panvk_per_arch(push_descriptor_set_assign_layout)(
          desc_state->push_sets[i], slayout);
@@ -432,7 +431,7 @@ panvk_cmd_prepare_ubos(struct panvk_cmd_buffer *cmdbuf,
       &cmdbuf->desc_pool.base, ubo_count, UNIFORM_BUFFER);
    struct mali_uniform_buffer_packed *ubo_descs = ubos.cpu;
 
-   for (unsigned s = 0; s < layout->set_count; s++) {
+   for (unsigned s = 0; s < ARRAY_SIZE(desc_state->sets); s++) {
       const struct panvk_shader_set_info *set_info = &layout->sets[s];
       const struct panvk_descriptor_set *set = desc_state->sets[s];
 
@@ -942,7 +941,7 @@ panvk_fill_img_attribs(struct panvk_cmd_buffer *cmdbuf,
                        const struct panvk_shader_set_layout *set_layout,
                        void *attrib_bufs, void *attribs, unsigned first_buf)
 {
-   for (unsigned s = 0; s < set_layout->set_count; s++) {
+   for (unsigned s = 0; s < ARRAY_SIZE(desc_state->sets); s++) {
       const struct panvk_descriptor_set *set = desc_state->sets[s];
 
       if (!set)
@@ -1090,9 +1089,8 @@ panvk_draw_prepare_vs_attribs(struct panvk_cmd_buffer *cmdbuf,
    const struct panvk_graphics_pipeline *pipeline = cmdbuf->state.gfx.pipeline;
    const struct vk_vertex_input_state *vi =
       cmdbuf->vk.dynamic_graphics_state.vi;
-   unsigned num_imgs = pipeline->vs.has_img_access
-                          ? pipeline->base.layout->set_layout.num_imgs
-                          : 0;
+   unsigned num_imgs =
+      pipeline->vs.has_img_access ? desc_state->shader_layout.num_imgs : 0;
    unsigned num_vs_attribs = util_last_bit(vi->attributes_valid);
    unsigned num_vbs = util_last_bit(vi->bindings_valid);
    unsigned attrib_count =
@@ -1147,9 +1145,9 @@ panvk_draw_prepare_vs_attribs(struct panvk_cmd_buffer *cmdbuf,
 
       memset(attribs.cpu + num_vs_attribs * pan_size(ATTRIBUTE), 0,
              (MAX_VS_ATTRIBS - num_vs_attribs) * pan_size(ATTRIBUTE));
-      panvk_fill_img_attribs(
-         cmdbuf, desc_state, &pipeline->base.layout->set_layout,
-         bufs.cpu + bufs_offset, attribs.cpu + attribs_offset, num_vbs * 2);
+      panvk_fill_img_attribs(cmdbuf, desc_state, &desc_state->shader_layout,
+                             bufs.cpu + bufs_offset,
+                             attribs.cpu + attribs_offset, num_vbs * 2);
       desc_state->img.attrib_bufs = bufs.gpu + bufs_offset;
       desc_state->img.attribs = attribs.gpu + attribs_offset;
    }
@@ -1174,8 +1172,7 @@ panvk_draw_prepare_attributes(struct panvk_cmd_buffer *cmdbuf,
    draw->vs.attribute_bufs = cmdbuf->state.gfx.vs.attrib_bufs;
 
    if (pipeline->fs.has_img_access) {
-      panvk_prepare_img_attribs(cmdbuf, desc_state,
-                                &pipeline->base.layout->set_layout);
+      panvk_prepare_img_attribs(cmdbuf, desc_state, &desc_state->shader_layout);
       draw->fs.attributes = desc_state->img.attribs;
       draw->fs.attribute_bufs = desc_state->img.attrib_bufs;
    }
@@ -1503,16 +1500,13 @@ panvk_cmd_draw(struct panvk_cmd_buffer *cmdbuf, struct panvk_draw_info *draw)
    panvk_per_arch(cmd_alloc_tls_desc)(cmdbuf, true);
 
    panvk_cmd_prepare_draw_sysvals(cmdbuf, draw);
-   panvk_cmd_prepare_push_sets(cmdbuf, desc_state, &pipeline->base);
+   panvk_cmd_prepare_push_sets(cmdbuf, desc_state);
    panvk_cmd_prepare_push_uniforms(cmdbuf, desc_state,
                                    &cmdbuf->state.gfx.sysvals,
                                    sizeof(cmdbuf->state.gfx.sysvals));
-   panvk_cmd_prepare_ubos(cmdbuf, desc_state,
-                          &pipeline->base.layout->set_layout);
-   panvk_cmd_prepare_textures(cmdbuf, desc_state,
-                              &pipeline->base.layout->set_layout);
-   panvk_cmd_prepare_samplers(cmdbuf, desc_state,
-                              &pipeline->base.layout->set_layout);
+   panvk_cmd_prepare_ubos(cmdbuf, desc_state, &desc_state->shader_layout);
+   panvk_cmd_prepare_textures(cmdbuf, desc_state, &desc_state->shader_layout);
+   panvk_cmd_prepare_samplers(cmdbuf, desc_state, &desc_state->shader_layout);
 
    /* TODO: indexed draws */
    draw->tls = batch->tls.gpu;
@@ -1946,17 +1940,15 @@ panvk_per_arch(CmdDispatch)(VkCommandBuffer commandBuffer, uint32_t x,
    panvk_per_arch(cmd_alloc_tls_desc)(cmdbuf, false);
    dispatch.tsd = batch->tls.gpu;
 
-   panvk_cmd_prepare_push_sets(cmdbuf, desc_state, &pipeline->base);
+   panvk_cmd_prepare_push_sets(cmdbuf, desc_state);
 
    if (pipeline->cs.has_img_access)
-      panvk_prepare_img_attribs(cmdbuf, desc_state,
-                                &pipeline->base.layout->set_layout);
+      panvk_prepare_img_attribs(cmdbuf, desc_state, &desc_state->shader_layout);
 
    dispatch.attributes = desc_state->img.attribs;
    dispatch.attribute_bufs = desc_state->img.attrib_bufs;
 
-   panvk_cmd_prepare_ubos(cmdbuf, desc_state,
-                          &pipeline->base.layout->set_layout);
+   panvk_cmd_prepare_ubos(cmdbuf, desc_state, &desc_state->shader_layout);
    dispatch.ubos = desc_state->ubos;
 
    panvk_cmd_prepare_push_uniforms(cmdbuf, desc_state,
@@ -1964,12 +1956,10 @@ panvk_per_arch(CmdDispatch)(VkCommandBuffer commandBuffer, uint32_t x,
                                    sizeof(cmdbuf->state.compute.sysvals));
    dispatch.push_uniforms = desc_state->push_uniforms;
 
-   panvk_cmd_prepare_textures(cmdbuf, desc_state,
-                              &pipeline->base.layout->set_layout);
+   panvk_cmd_prepare_textures(cmdbuf, desc_state, &desc_state->shader_layout);
    dispatch.textures = desc_state->textures;
 
-   panvk_cmd_prepare_samplers(cmdbuf, desc_state,
-                              &pipeline->base.layout->set_layout);
+   panvk_cmd_prepare_samplers(cmdbuf, desc_state, &desc_state->shader_layout);
    dispatch.samplers = desc_state->samplers;
 
    panfrost_pack_work_groups_compute(
@@ -2386,12 +2376,18 @@ panvk_per_arch(CmdBindPipeline)(VkCommandBuffer commandBuffer,
 
       cmdbuf->state.gfx.fs.rsd = 0;
       cmdbuf->state.gfx.pipeline = gfx_pipeline;
+      cmdbuf->state.gfx.desc_state.shader_layout =
+         gfx_pipeline->vs.base->set_layout;
       break;
    }
 
    case VK_PIPELINE_BIND_POINT_COMPUTE:
-      cmdbuf->state.compute.pipeline =
+      const struct panvk_compute_pipeline *compute_pipeline =
          panvk_pipeline_to_compute_pipeline(pipeline);
+
+      cmdbuf->state.compute.pipeline = compute_pipeline;
+      cmdbuf->state.compute.desc_state.shader_layout =
+         compute_pipeline->cs.base->set_layout;
       break;
 
    default:
