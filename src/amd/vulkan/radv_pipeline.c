@@ -1080,6 +1080,64 @@ radv_GetPipelineExecutableStatisticsKHR(VkDevice _device, const VkPipelineExecut
    }
    ++s;
 
+   if (s < end) {
+      desc_copy(s->name, "Inputs");
+      desc_copy(s->description, "Number of input slots reserved for the shader");
+      s->format = VK_PIPELINE_EXECUTABLE_STATISTIC_FORMAT_UINT64_KHR;
+
+      switch (shader->info.stage) {
+      case MESA_SHADER_VERTEX:
+         s->value.u64 = util_bitcount(shader->info.vs.input_slot_usage_mask);
+         break;
+      case MESA_SHADER_TESS_CTRL:
+         s->value.u64 = shader->info.tcs.num_linked_inputs;
+         break;
+      case MESA_SHADER_TESS_EVAL:
+         s->value.u64 = shader->info.tes.num_linked_inputs + shader->info.tes.num_linked_patch_inputs;
+         break;
+      case MESA_SHADER_GEOMETRY:
+         s->value.u64 = shader->info.gs.num_linked_inputs;
+         break;
+      case MESA_SHADER_FRAGMENT:
+         s->value.u64 = shader->info.ps.num_interp + shader->info.ps.num_prim_interp;
+         break;
+      default:
+         s->value.u64 = 0;
+         break;
+      }
+   }
+   ++s;
+
+   if (s < end) {
+      desc_copy(s->name, "Outputs");
+      desc_copy(s->description, "Number of output slots reserved for the shader");
+      s->format = VK_PIPELINE_EXECUTABLE_STATISTIC_FORMAT_UINT64_KHR;
+
+      switch (shader->info.stage) {
+      case MESA_SHADER_VERTEX:
+         s->value.u64 = shader->info.vs.num_linked_outputs;
+         break;
+      case MESA_SHADER_TESS_CTRL:
+         s->value.u64 = shader->info.tcs.num_linked_outputs + shader->info.tcs.num_linked_patch_outputs;
+         break;
+      case MESA_SHADER_TESS_EVAL:
+         s->value.u64 = shader->info.tes.num_linked_outputs;
+         break;
+      case MESA_SHADER_GEOMETRY:
+         s->value.u64 = shader->info.gs.max_gsvs_emit_size;
+         break;
+      case MESA_SHADER_FRAGMENT:
+         s->value.u64 = shader->info.ps.colors_written + !!shader->info.ps.writes_z +
+                        !!shader->info.ps.writes_stencil + !!shader->info.ps.writes_sample_mask +
+                        !!shader->info.ps.writes_mrt0_alpha;
+         break;
+      default:
+         s->value.u64 = 0;
+         break;
+      }
+   }
+   ++s;
+
    if (shader->statistics) {
       for (unsigned i = 0; i < aco_num_statistics; i++) {
          const struct aco_compiler_statistic_info *info = &aco_statistic_infos[i];
