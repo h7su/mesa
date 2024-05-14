@@ -4061,11 +4061,15 @@ isl_surf_get_uncompressed_surf(const struct isl_device *dev,
                                              x_offset_el,
                                              y_offset_el);
 
+         isl_surf_usage_flags_t usage = surf->usage;
+
          /* Even for cube maps there will be only single face, therefore drop
           * the corresponding flag if present.
           */
-         const isl_surf_usage_flags_t usage =
-            surf->usage & (~ISL_SURF_USAGE_CUBE_BIT);
+         usage &= ~ISL_SURF_USAGE_CUBE_BIT;
+
+         /* Avoid increased alignment requirements from ISL. */
+         usage |= ISL_SURF_USAGE_NO_AUX_TT_ALIGNMENT_BIT;
 
          bool ok UNUSED;
          ok = isl_surf_init(dev, ucompr_surf,
