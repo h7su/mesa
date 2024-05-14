@@ -3912,6 +3912,22 @@ fs_assign_slot_groups(struct linkage_info *linkage,
                          color_channel_rotate, progress);
    }
 
+   /* Fill unused interpolated slots with excess flat slots
+    * that don't fit into full slot groups to avoid starting a new slot group.
+    *
+    * Note that BITSET_COUNT doesn't work on function arguments.
+    */
+   unsigned num_flat_slots = __bitset_count(flat_mask, BITSET_WORDS(NUM_SCALAR_SLOTS)) * slot_size;
+   unsigned num_excess_flat_slots = num_flat_slots % 8;
+   if (num_excess_flat_slots && unused_interp_slots >= num_excess_flat_slots) {
+      fs_assign_slots(linkage, assigned_mask, assigned_fs_vec4_type,
+                      flat_mask, sized_interp_type,
+                      slot_size, num_excess_flat_slots, assign_colors,
+                      color_channel_rotate, progress);
+
+      unused_interp_slots -= num_excess_flat_slots;
+   }
+
    /* Put flat slots next.
     * Note that only flat vec4 slots can have both 32-bit and 16-bit types
     * packed in the same vec4. 32-bit flat inputs are packed first, followed
