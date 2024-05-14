@@ -1344,24 +1344,6 @@ radv_link_vs(const struct radv_device *device, struct radv_shader_stage *vs_stag
 
       radv_link_shaders(device, vs_stage, next_stage, gfx_state);
    }
-
-   if (next_stage && next_stage->nir->info.stage == MESA_SHADER_TESS_CTRL) {
-      nir_linked_io_var_info vs2tcs = nir_assign_linked_io_var_locations(vs_stage->nir, next_stage->nir);
-
-      vs_stage->info.vs.num_linked_outputs = vs2tcs.num_linked_io_vars;
-      vs_stage->info.outputs_linked = true;
-
-      next_stage->info.tcs.num_linked_inputs = vs2tcs.num_linked_io_vars;
-      next_stage->info.inputs_linked = true;
-   } else if (next_stage && next_stage->nir->info.stage == MESA_SHADER_GEOMETRY) {
-      nir_linked_io_var_info vs2gs = nir_assign_linked_io_var_locations(vs_stage->nir, next_stage->nir);
-
-      vs_stage->info.vs.num_linked_outputs = vs2gs.num_linked_io_vars;
-      vs_stage->info.outputs_linked = true;
-
-      next_stage->info.gs.num_linked_inputs = vs2gs.num_linked_io_vars;
-      next_stage->info.inputs_linked = true;
-   }
 }
 
 static void
@@ -1378,28 +1360,6 @@ radv_link_tcs(const struct radv_device *device, struct radv_shader_stage *tcs_st
 
    /* Copy TCS info into the TES info */
    merge_tess_info(&tes_stage->nir->info, &tcs_stage->nir->info);
-
-   /* Count the number of per-vertex output slots we need to reserve for the TCS and TES. */
-   const uint64_t nir_mask = tcs_stage->nir->info.outputs_written & tes_stage->nir->info.inputs_read &
-                             ~(VARYING_SLOT_TESS_LEVEL_OUTER | VARYING_SLOT_TESS_LEVEL_INNER);
-   const uint64_t io_mask = radv_gather_unlinked_io_mask(nir_mask);
-   const unsigned num_reserved_outputs = util_last_bit64(io_mask);
-
-   /* Count the number of per-patch output slots we need to reserve for the TCS and TES.
-    * This is necessary because we need it to determine the patch size in VRAM.
-    */
-   const uint64_t patch_io_mask = radv_gather_unlinked_patch_io_mask(
-      tcs_stage->nir->info.outputs_written & tes_stage->nir->info.inputs_read,
-      tcs_stage->nir->info.patch_outputs_written & tes_stage->nir->info.patch_inputs_read);
-   const unsigned num_reserved_patch_outputs = util_last_bit64(patch_io_mask);
-
-   tcs_stage->info.tcs.num_linked_outputs = num_reserved_outputs;
-   tcs_stage->info.tcs.num_linked_patch_outputs = num_reserved_patch_outputs;
-   tcs_stage->info.outputs_linked = true;
-
-   tes_stage->info.tes.num_linked_inputs = num_reserved_outputs;
-   tes_stage->info.tes.num_linked_patch_inputs = num_reserved_patch_outputs;
-   tes_stage->info.inputs_linked = true;
 }
 
 static void
@@ -1417,16 +1377,6 @@ radv_link_tes(const struct radv_device *device, struct radv_shader_stage *tes_st
              next_stage->nir->info.stage == MESA_SHADER_FRAGMENT);
 
       radv_link_shaders(device, tes_stage, next_stage, gfx_state);
-   }
-
-   if (next_stage && next_stage->nir->info.stage == MESA_SHADER_GEOMETRY) {
-      nir_linked_io_var_info tes2gs = nir_assign_linked_io_var_locations(tes_stage->nir, next_stage->nir);
-
-      tes_stage->info.tes.num_linked_outputs = tes2gs.num_linked_io_vars;
-      tes_stage->info.outputs_linked = true;
-
-      next_stage->info.gs.num_linked_inputs = tes2gs.num_linked_io_vars;
-      next_stage->info.inputs_linked = true;
    }
 }
 
@@ -1663,6 +1613,50 @@ radv_graphics_shaders_link_varyings(const struct radv_device *device,
          if (consumer->info.stage == MESA_SHADER_TESS_CTRL ||
              consumer->info.stage == MESA_SHADER_GEOMETRY) {
             assert(producer->info.outputs_written == consumer->info.inputs_read);
+         }
+
+         if (s == MESA_SHADER_VERTEX && next == MESA_SHADER_TESS_CTRL) {
+            const unsigned num_linked_outputs = util_bitcount64(producer->info.outputs_written);
+            producer_stage->info.vs.num_linked_outputs = num_linked_outputs;
+            producer_stage->info.outputs_linked = true;
+            consumer_stage->info.tcs.num_linked_inputs = num_linked_outputs;
+            consumer_stage->info.inputs_linked = true;
+         } else if (s == MESA_SHADER_VERTEX && next == MESA_SHADER_GEOMETRY) {
+            const unsigned num_linked_outputs = util_bitcount64(producer->info.outputs_written);
+            producer_stage->info.vs.num_linked_outputs = num_linked_outputs;
+            producer_stage->info.outputs_linked = true;
+            consumer_stage->info.gs.num_linked_inputs = num_linked_outputs;
+            consumer_stage->info.inputs_linked = true;
+         } else if (s == MESA_SHADER_TESS_CTRL) {
+            assume(next == MESA_SHADER_TESS_EVAL);
+
+            /* Count the number of per-vertex output slots we need to reserve for the TCS and TES. */
+            const uint64_t nir_mask = producer_stage->nir->info.outputs_written & consumer_stage->nir->info.inputs_read &
+                                    ~(VARYING_SLOT_TESS_LEVEL_OUTER | VARYING_SLOT_TESS_LEVEL_INNER);
+            const uint64_t io_mask = radv_gather_unlinked_io_mask(nir_mask);
+            const unsigned num_reserved_outputs = util_last_bit64(io_mask);
+
+            /* Count the number of per-patch output slots we need to reserve for the TCS and TES.
+             * This is necessary because we need it to determine the patch size in VRAM.
+             */
+            const uint64_t patch_io_mask = radv_gather_unlinked_patch_io_mask(
+               producer_stage->nir->info.outputs_written & consumer_stage->nir->info.inputs_read,
+               producer_stage->nir->info.patch_outputs_written & consumer_stage->nir->info.patch_inputs_read);
+            const unsigned num_reserved_patch_outputs = util_last_bit64(patch_io_mask);
+
+            producer_stage->info.tcs.num_linked_outputs = num_reserved_outputs;
+            producer_stage->info.tcs.num_linked_patch_outputs = num_reserved_patch_outputs;
+            producer_stage->info.outputs_linked = true;
+
+            consumer_stage->info.tes.num_linked_inputs = num_reserved_outputs;
+            consumer_stage->info.tes.num_linked_patch_inputs = num_reserved_patch_outputs;
+            consumer_stage->info.inputs_linked = true;
+         } else if (s == MESA_SHADER_TESS_EVAL && next == MESA_SHADER_GEOMETRY) {
+            const unsigned num_linked_outputs = util_bitcount64(producer->info.outputs_written);
+            producer_stage->info.tes.num_linked_outputs = num_linked_outputs;
+            producer_stage->info.outputs_linked = true;
+            consumer_stage->info.gs.num_linked_inputs = num_linked_outputs;
+            consumer_stage->info.inputs_linked = true;
          }
       }
 
