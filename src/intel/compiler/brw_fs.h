@@ -218,6 +218,17 @@ struct pull_constant_range {
    uint32_t length_B;
 };
 
+struct constant_range {
+   /* Block identifier of the range */
+   uint16_t block;
+   /* Register offset at which ranges are loaded (in units of REG_SIZE) */
+   uint16_t reg_offset;
+   /* Length of the range in bytes */
+   uint16_t length_B;
+   /* Offset of the range in bytes */
+   uint32_t offset_B;
+};
+
 /**
  * The fragment shader front-end.
  *
@@ -336,6 +347,13 @@ public:
 
    void calculate_cfg();
 
+   void append_constant_range(uint16_t block,
+                              uint32_t offset_B,
+                              uint32_t length_B);
+   fs_reg get_constant_reg(uint16_t block, uint32_t offset_B,
+                           enum brw_reg_type type);
+   fs_reg get_constant_reg(uint16_t block, fs_reg uniform);
+
    const struct brw_compiler *compiler;
    void *log_data; /* Passed to compiler->*_log functions */
 
@@ -371,12 +389,6 @@ public:
 
    /** Byte-offset for the next available spot in the scratch space buffer. */
    unsigned last_scratch;
-
-   /**
-    * Array mapping UNIFORM register numbers to the push parameter index,
-    * or -1 if this uniform register isn't being uploaded as a push constant.
-    */
-   int *push_constant_loc;
 
    fs_reg frag_depth;
    fs_reg frag_stencil;
@@ -459,6 +471,11 @@ public:
 
    /* Constants ranges pulled by the shader */
    std::vector<struct pull_constant_range> pull_constant_ranges;
+
+   /* Constants ranges used by the shader */
+   std::vector<struct constant_range> constant_ranges;
+
+   bool constants_assigned;
 
    struct shader_stats shader_stats;
 

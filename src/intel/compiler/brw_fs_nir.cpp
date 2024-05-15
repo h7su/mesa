@@ -182,7 +182,7 @@ fs_nir_setup_uniforms(fs_visitor &s)
    const intel_device_info *devinfo = s.devinfo;
 
    /* Only the first compile gets to set up uniforms. */
-   if (s.push_constant_loc)
+   if (s.constants_assigned)
       return;
 
    s.uniforms = s.nir->num_uniforms / 4;

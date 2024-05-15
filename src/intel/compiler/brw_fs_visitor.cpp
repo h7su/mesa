@@ -1113,8 +1113,8 @@ fs_visitor::init()
    this->first_non_payload_grf = 0;
 
    this->uniforms = 0;
+   this->constants_assigned = false;
    this->last_scratch = 0;
-   this->push_constant_loc = NULL;
 
    memset(&this->shader_stats, 0, sizeof(this->shader_stats));
 
