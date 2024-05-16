@@ -4443,20 +4443,38 @@ get_gfx6_cache_flags(bool glc, bool slc, bool dlc)
 ac_hw_cache_flags
 get_load_cache_flags(isel_context* ctx, bool glc, bool slc)
 {
-   bool dlc = glc && (ctx->program->gfx_level == GFX10 || ctx->program->gfx_level == GFX10_3);
-   return get_gfx6_cache_flags(glc, slc, dlc);
+   if (ctx->program->gfx_level >= GFX12) {
+      ac_hw_cache_flags cache = {0};
+      cache.scope = (glc || slc || dlc) ? gfx12_scope_memory : gfx12_scope_cu;
+      return cache;
+   } else {
+      bool dlc = glc && (ctx->program->gfx_level == GFX10 || ctx->program->gfx_level == GFX10_3);
+      return get_gfx6_cache_flags(glc, slc, dlc);
+   }
 }
 
 ac_hw_cache_flags
 get_store_cache_flags(isel_context* ctx, bool glc, bool slc)
 {
-   return get_gfx6_cache_flags(glc, slc, false);
+   if (ctx->program->gfx_level >= GFX12) {
+      ac_hw_cache_flags cache = {0};
+      cache.scope = gfx12_scope_memory;
+      return cache;
+   } else {
+      return get_gfx6_cache_flags(glc, slc, false);
+   }
 }
 
 ac_hw_cache_flags
 get_atomic_cache_flags(isel_context* ctx, bool return_previous)
 {
-   return get_gfx6_cache_flags(return_previous, false, false);
+   if (ctx->program->gfx_level >= GFX12) {
+      ac_hw_cache_flags cache = {0};
+      cache.temporal_hint = return_previous ? gfx12_atomic_return : 0;
+      return cache;
+   } else {
+      return get_gfx6_cache_flags(return_previous, false, false);
+   }
 }
 
 Temp
