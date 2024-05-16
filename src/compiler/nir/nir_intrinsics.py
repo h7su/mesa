@@ -1328,10 +1328,10 @@ load("shared_ir3", [1], [BASE, ALIGN_MUL, ALIGN_OFFSET], [CAN_ELIMINATE])
 # and a 32-bit offset.  The hardware will add the base and the offset, which
 # saves us from doing 64-bit math on the base address.
 
-# src[] = { value, address(vec2 of hi+lo uint32_t), offset }.
+# src[] = { value, address(vec2 of hi+lo uint32_t), byte_offset }.
 # const_index[] = { write_mask, align_mul, align_offset }
 store("global_ir3", [2, 1], indices=[ACCESS, ALIGN_MUL, ALIGN_OFFSET])
-# src[] = { address(vec2 of hi+lo uint32_t), offset }.
+# src[] = { address(vec2 of hi+lo uint32_t), byte_offset }.
 # const_index[] = { access, align_mul, align_offset }
 # the alignment applies to the base address
 load("global_ir3", [2, 1], indices=[ACCESS, ALIGN_MUL, ALIGN_OFFSET, RANGE_BASE, RANGE], flags=[CAN_ELIMINATE])

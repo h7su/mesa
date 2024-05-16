@@ -702,15 +702,15 @@ lower_inline_ubo(nir_builder *b, nir_intrinsic_instr *intrin, void *cb_data)
       }
       val = nir_load_global_ir3(b, intrin->num_components,
                                 intrin->def.bit_size,
-                                base_addr, nir_ishr_imm(b, offset, 2),
-                                .access = 
+                                base_addr, offset,
+                                .access =
                                  (enum gl_access_qualifier)(
                                     (enum gl_access_qualifier)(ACCESS_NON_WRITEABLE | ACCESS_CAN_REORDER) |
                                     ACCESS_CAN_SPECULATE),
                                 .align_mul = 16,
                                 .align_offset = 0,
                                 .range_base = 0,
-                                .range = range);
+                                .range = range * 4);
    } else {
       val = nir_load_uniform(b, intrin->num_components,
                              intrin->def.bit_size,

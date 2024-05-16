@@ -34,18 +34,11 @@ get_ubo_load_range(nir_shader *nir, nir_intrinsic_instr *instr,
    uint32_t offset = nir_intrinsic_range_base(instr);
    uint32_t size = nir_intrinsic_range(instr);
 
-   if (instr->intrinsic == nir_intrinsic_load_global_ir3) {
-      offset *= 4;
-      size *= 4;
-   }
-
    /* If the offset is constant, the range is trivial (and NIR may not have
     * figured it out).
     */
    if (nir_src_is_const(instr->src[1])) {
       offset = nir_src_as_uint(instr->src[1]);
-      if (instr->intrinsic == nir_intrinsic_load_global_ir3)
-         offset *= 4;
       size = nir_intrinsic_dest_components(instr) * 4;
    }
 
@@ -518,7 +511,7 @@ copy_global_to_uniform(nir_shader *nir, struct ir3_ubo_analysis_state *state)
              */
             nir_def *load =
                nir_load_global_ir3(b, 4, 32, base,
-                                   nir_imm_int(b, (start + offset) / 4));
+                                   nir_imm_int(b, start + offset));
             nir_store_uniform_ir3(b, load, .base = const_offset);
          }
       }

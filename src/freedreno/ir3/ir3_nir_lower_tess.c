@@ -527,6 +527,9 @@ lower_tess_ctrl_block(nir_block *block, nir_builder *b, struct state *state)
             nir_intrinsic_io_semantics(intr).location,
             nir_intrinsic_component(intr), intr->src[1].ssa);
 
+         /* convert to offset in bytes: */
+         offset = nir_imul_imm(b, offset, 4);
+
          replace_intrinsic(b, intr, nir_intrinsic_load_global_ir3, address,
                            offset, NULL);
          break;
@@ -547,6 +550,9 @@ lower_tess_ctrl_block(nir_block *block, nir_builder *b, struct state *state)
             b, state, intr->src[1].ssa,
             nir_intrinsic_io_semantics(intr).location,
             nir_intrinsic_component(intr), intr->src[2].ssa);
+
+         /* convert to offset in bytes: */
+         offset = nir_imul_imm(b, offset, 4);
 
          replace_intrinsic(b, intr, nir_intrinsic_store_global_ir3, value,
                            address, offset);
@@ -578,6 +584,9 @@ lower_tess_ctrl_block(nir_block *block, nir_builder *b, struct state *state)
                                         nir_intrinsic_component(intr),
                                         intr->src[0].ssa);
          }
+
+         /* convert to offset in bytes: */
+         offset = nir_imul_imm(b, offset, 4);
 
          replace_intrinsic(b, intr, nir_intrinsic_load_global_ir3, address,
                            offset, NULL);
@@ -622,6 +631,9 @@ lower_tess_ctrl_block(nir_block *block, nir_builder *b, struct state *state)
             nir_def *offset = build_tessfactor_base(
                b, location, nir_intrinsic_component(intr), state);
 
+            /* convert to offset in bytes: */
+            offset = nir_imul_imm(b, offset, 4);
+
             replace_intrinsic(b, intr, nir_intrinsic_store_global_ir3,
                               intr->src[0].ssa,
                               nir_load_tess_factor_base_ir3(b),
@@ -635,6 +647,9 @@ lower_tess_ctrl_block(nir_block *block, nir_builder *b, struct state *state)
             nir_def *offset = build_patch_offset(
                b, state, location, nir_intrinsic_component(intr),
                intr->src[1].ssa);
+
+            /* convert to offset in bytes: */
+            offset = nir_imul_imm(b, offset, 4);
 
             replace_intrinsic(b, intr, nir_intrinsic_store_global_ir3,
                               intr->src[0].ssa, address, offset);
@@ -739,6 +754,9 @@ lower_tess_eval_block(nir_block *block, nir_builder *b, struct state *state)
             nir_intrinsic_io_semantics(intr).location,
             nir_intrinsic_component(intr), intr->src[1].ssa);
 
+         /* convert to offset in bytes: */
+         offset = nir_imul_imm(b, offset, 4);
+
          replace_intrinsic(b, intr, nir_intrinsic_load_global_ir3, address,
                            offset, NULL);
          break;
@@ -768,6 +786,9 @@ lower_tess_eval_block(nir_block *block, nir_builder *b, struct state *state)
                                         nir_intrinsic_component(intr),
                                         intr->src[0].ssa);
          }
+
+         /* convert to offset in bytes: */
+         offset = nir_imul_imm(b, offset, 4);
 
          replace_intrinsic(b, intr, nir_intrinsic_load_global_ir3, address,
                            offset, NULL);

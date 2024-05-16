@@ -333,6 +333,11 @@ emit_intrinsic_load_global_ir3(struct ir3_context *ctx,
    unsigned dest_components = nir_intrinsic_dest_components(intr);
    struct ir3_instruction *addr, *offset;
 
+   /* RANGE is used for UBO lowering (since TU uses globals for UBOs), but
+    * we don't handle non-zero RANGE_BASE:
+    */
+   assert(nir_intrinsic_range_base(intr) == 0);
+
    addr = ir3_collect(b, ir3_get_src(ctx, &intr->src[0])[0],
                       ir3_get_src(ctx, &intr->src[0])[1]);
 
@@ -350,9 +355,9 @@ emit_intrinsic_load_global_ir3(struct ir3_context *ctx,
                      0, create_immed(b, dest_components), 0);
    } else {
       offset = ir3_get_src(ctx, &intr->src[1])[0];
-      if (shift) {
-         /* A7XX TODO: Move to NIR for it to be properly optimized? */
-         offset = ir3_SHL_B(b, offset, 0, create_immed(b, shift), 0);
+      if (ctx->compiler->gen < 7) {
+         /* A6XX TODO: Move to NIR for it to be properly optimized? */
+         offset = ir3_SHR_B(b, offset, 0, create_immed(b, 2), 0);
       }
       load =
          ir3_LDG_A(b, addr, 0, offset, 0, create_immed(b, 0), 0,
@@ -394,9 +399,9 @@ emit_intrinsic_store_global_ir3(struct ir3_context *ctx,
                     create_immed(b, ncomp), 0);
    } else {
       offset = ir3_get_src(ctx, &intr->src[2])[0];
-      if (ctx->compiler->gen >= 7) {
-         /* A7XX TODO: Move to NIR for it to be properly optimized? */
-         offset = ir3_SHL_B(b, offset, 0, create_immed(b, 2), 0);
+      if (ctx->compiler->gen < 7) {
+         /* A6XX TODO: Move to NIR for it to be properly optimized? */
+         offset = ir3_SHR_B(b, offset, 0, create_immed(b, 2), 0);
       }
       stg =
          ir3_STG_A(b, addr, 0, offset, 0, create_immed(b, 0), 0,
