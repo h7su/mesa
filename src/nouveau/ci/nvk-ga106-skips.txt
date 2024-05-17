@@ -11,6 +11,6 @@ dEQP-VK.memory.pipeline_barrier.transfer_src_transfer_dst.1048576
 dEQP-VK.reconvergence.(sub|work)group_uniform_control_flow_(ballot|elect).compute.nesting4.(0.40|7.10)
 
 # Hangs?
-dEQP-VK.pipeline.*
-dEQP-VK.transform_feedback.*
-dEQP-VK.wsi.*
+# dEQP-VK.pipeline.*
+# dEQP-VK.transform_feedback.*
+# dEQP-VK.wsi.*
