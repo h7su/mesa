@@ -90,7 +90,6 @@ zink-nvk-ga106-glcts-piglit-valve:
   variables:
     GPU_VERSION: zink-nvk
     B2C_TIMEOUT_OVERALL_MINUTES: 40  # usual run time: 26min
-    ZINK_DEBUG: quiet  # otherwise log is flooded with `ERROR - Piglit error: MESA: warning: WARNING: Incorrect rendering will happen because the Vulkan device doesn't support the 'EXT_image_drm_format_modifier' feature`
 
 zink-tu-a618:
   extends:
