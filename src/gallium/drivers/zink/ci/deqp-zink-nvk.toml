@@ -14,7 +14,7 @@ deqp_args = [
     "--deqp-visibility=hidden"
 ]
 timeout = 180.0
-tests_per_group = 1000
+tests_per_group = 500
 renderer_check = "zink.*NVK"
 
 [[piglit]]
