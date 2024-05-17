@@ -11,4 +11,4 @@ nvk-ga106-vkcts-valve:
   variables:
     B2C_TIMEOUT_BOOT_MINUTES: 115
     B2C_TIMEOUT_OVERALL_MINUTES: 115
-    HWCI_START_WESTON: 1
+    # HWCI_START_WESTON: 1  # Disabled since we do not have a working GL driver
