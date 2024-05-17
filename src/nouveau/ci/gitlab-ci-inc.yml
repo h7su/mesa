@@ -54,7 +54,7 @@
     # 4 - make linux LINUX_SRC=~/linux-nvk GOARCH=amd64 FEATURES=common,network,sensors,serial_adapters,ucode,nouveau
     # This is https://gitlab.freedesktop.org/gfxstrand/linux/-/commits/nvk at ea267fc470915b0593e6cbc492a6528c1b36ef46
     # which is 6.8 + one patch (nouveau: reset the bo resource bus info after an eviction)
-    B2C_KERNEL_URL: https://static.engestrom.ch/linux-6.8-nvk-ga106
+    B2C_KERNEL_URL: https://fs.mupuf.org/nvk-ga106/linux-ga106-b2c-6.8.7
     # GSP is not loaded by default
     B2C_KERNEL_CMDLINE_EXTRAS: 'nouveau.config=NvGspRm=1'
   tags:
