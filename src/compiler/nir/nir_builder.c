@@ -372,6 +372,10 @@ nir_load_system_value(nir_builder *build, nir_intrinsic_op op, int index,
 void
 nir_builder_instr_insert(nir_builder *build, nir_instr *instr)
 {
+   /* Set location information */
+   if (build->src_loc_index != 0)
+      build->cursor.src_loc_index = build->src_loc_index;
+
    nir_instr_insert(build->cursor, instr);
 
    if (build->update_divergence)

@@ -47,6 +47,9 @@ typedef struct nir_builder {
    /* Float_controls2 bits. See nir_alu_instr for details. */
    uint32_t fp_fast_math;
 
+   /* Source location that will be assigned to inserted instructions */
+   uint32_t src_loc_index;
+
    nir_shader *shader;
    nir_function_impl *impl;
 } nir_builder;

@@ -196,12 +196,13 @@ static const struct spirv_capabilities implemented_capabilities = {
    .WorkgroupMemoryExplicitLayout16BitAccessKHR = true,
 };
 
-#ifndef NDEBUG
 uint32_t mesa_spirv_debug = 0;
 
 static const struct debug_named_value mesa_spirv_debug_control[] = {
    { "structured", MESA_SPIRV_DEBUG_STRUCTURED,
      "Print information of the SPIR-V structured control flow parsing" },
+   { "srcloc", MESA_SPIRV_DEBUG_SRC_LOC,
+     "Add source locations to the NIR shader" },
    DEBUG_NAMED_VALUE_END,
 };
 
@@ -230,7 +231,6 @@ vtn_default_log_level(void)
 
    return level;
 }
-#endif
 
 void
 vtn_log(struct vtn_builder *b, enum nir_spirv_debug_level level,
@@ -287,16 +287,16 @@ vtn_log_err(struct vtn_builder *b,
 
    ralloc_vasprintf_append(&msg, fmt, args);
 
-   ralloc_asprintf_append(&msg, "\n    %zu bytes into the SPIR-V binary",
-                          b->spirv_offset);
+   ralloc_asprintf_append(&msg, "\n    %"PRIu64" bytes into the SPIR-V binary",
+                          b->src_loc.spirv_offset);
 
-   if (b->file) {
+   if (b->src_loc.file) {
       ralloc_asprintf_append(&msg,
-                             "\n    in SPIR-V source file %s, line %d, col %d",
-                             b->file, b->line, b->col);
+                             "\n    in SPIR-V source file %s, line %u, column %u",
+                             b->src_loc.file, b->src_loc.line, b->src_loc.col);
    }
 
-   vtn_log(b, level, b->spirv_offset, msg);
+   vtn_log(b, level, b->src_loc.spirv_offset, msg);
 
    ralloc_free(msg);
 }
@@ -712,9 +712,7 @@ const uint32_t *
 vtn_foreach_instruction(struct vtn_builder *b, const uint32_t *start,
                         const uint32_t *end, vtn_instruction_handler handler)
 {
-   b->file = NULL;
-   b->line = -1;
-   b->col = -1;
+   b->src_loc = (nir_src_loc) {0};
 
    const uint32_t *w = start;
    while (w < end) {
@@ -722,37 +720,62 @@ vtn_foreach_instruction(struct vtn_builder *b, const uint32_t *start,
       unsigned count = w[0] >> SpvWordCountShift;
       vtn_assert(count >= 1 && w + count <= end);
 
-      b->spirv_offset = (uint8_t *)w - (uint8_t *)b->spirv;
+      b->src_loc.spirv_offset = (uint8_t *)w - (uint8_t *)b->spirv;
 
       switch (opcode) {
       case SpvOpNop:
          break; /* Do nothing */
 
-      case SpvOpLine:
-         b->file = vtn_value(b, w[1], vtn_value_type_string)->str;
-         b->line = w[2];
-         b->col = w[3];
+      case SpvOpLine: {
+         const char *file = vtn_value(b, w[1], vtn_value_type_string)->str;
+
+         if (b->shader_sources) {
+            /* Make a b->shader -owned copy */
+            struct hash_entry *entry = _mesa_hash_table_search(b->shader_sources, file);
+            if (entry == NULL) {
+               entry = _mesa_hash_table_insert(b->shader_sources, file,
+                  ralloc_strdup(b->shader, file));
+            }
+            file = entry->data;
+         }
+
+         b->src_loc = (nir_src_loc) {
+            .file = (char *)file,
+            .line = w[2],
+            .col = w[3],
+            .spirv_offset = b->src_loc.spirv_offset,
+         };
          break;
+      }
 
       case SpvOpNoLine:
-         b->file = NULL;
-         b->line = -1;
-         b->col = -1;
+         b->src_loc = (nir_src_loc) {
+            .spirv_offset = b->src_loc.spirv_offset,
+         };
          break;
 
-      default:
+      default: {
+         if (b->shader_sources) {
+            util_dynarray_append(&b->src_locs, nir_src_loc, b->src_loc);
+            b->nb.src_loc_index = util_dynarray_num_elements(&b->src_locs, nir_src_loc) - 1;
+            if (b->nb.src_loc_index > UINT16_MAX) {
+               vtn_warn("Shader requires more source locations than supported: %u > %u",
+                        b->nb.src_loc_index, UINT16_MAX);
+               b->nb.src_loc_index = 0;
+            }
+         }
+
          if (!handler(b, opcode, w, count))
             return w;
+
          break;
+      }
       }
 
       w += count;
    }
 
-   b->spirv_offset = 0;
-   b->file = NULL;
-   b->line = -1;
-   b->col = -1;
+   b->src_loc = (nir_src_loc) {0};
 
    assert(w == end);
    return w;
@@ -6512,9 +6535,6 @@ vtn_create_builder(const uint32_t *words, size_t word_count,
 
    b->spirv = words;
    b->spirv_word_count = word_count;
-   b->file = NULL;
-   b->line = -1;
-   b->col = -1;
    list_inithead(&b->functions);
    b->entry_point_stage = stage;
    b->entry_point_name = entry_point_name;
@@ -6705,13 +6725,11 @@ can_remove(nir_variable *var, void *data)
    return !_mesa_set_search(vars_used_indirectly, var);
 }
 
-#ifndef NDEBUG
 static void
 initialize_mesa_spirv_debug(void)
 {
    mesa_spirv_debug = debug_get_option_mesa_spirv_debug();
 }
-#endif
 
 nir_shader *
 spirv_to_nir(const uint32_t *words, size_t word_count,
@@ -6721,10 +6739,8 @@ spirv_to_nir(const uint32_t *words, size_t word_count,
              const nir_shader_compiler_options *nir_options)
 
 {
-#ifndef NDEBUG
    static once_flag initialized_debug_flag = ONCE_FLAG_INIT;
    call_once(&initialized_debug_flag, initialize_mesa_spirv_debug);
-#endif
 
    const uint32_t *word_end = words + word_count;
 
@@ -6753,6 +6769,13 @@ spirv_to_nir(const uint32_t *words, size_t word_count,
 
    /* Skip the SPIR-V header, handled at vtn_create_builder */
    words+= 5;
+
+   if (MESA_SPIRV_DEBUG(SRC_LOC) || options->gather_src_locs) {
+      util_dynarray_init(&b->src_locs, b->shader);
+      util_dynarray_append(&b->src_locs, nir_src_loc, (nir_src_loc) {0});
+
+      b->shader_sources = _mesa_pointer_hash_table_create(b);
+   }
 
    /* Handle all the preamble instructions */
    words = vtn_foreach_instruction(b, words, word_end,
@@ -6969,6 +6992,11 @@ spirv_to_nir(const uint32_t *words, size_t word_count,
       NIR_PASS(_, b->shader, nir_remove_dead_variables, nir_var_shader_call_data,
                NULL);
 
+   if (b->shader_sources) {
+      b->shader->src_locs = util_dynarray_begin(&b->src_locs);
+      b->shader->src_loc_count = util_dynarray_num_elements(&b->src_locs, nir_src_loc);
+   }
+
    /* Unparent the shader from the vtn_builder before we delete the builder */
    ralloc_steal(NULL, b->shader);
 
@@ -7092,10 +7120,8 @@ bool
 spirv_library_to_nir_builder(FILE *fp, const uint32_t *words, size_t word_count,
                              const struct spirv_to_nir_options *options)
 {
-#ifndef NDEBUG
    static once_flag initialized_debug_flag = ONCE_FLAG_INIT;
    call_once(&initialized_debug_flag, initialize_mesa_spirv_debug);
-#endif
 
    const uint32_t *word_end = words + word_count;
 
