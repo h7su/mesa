@@ -1,0 +1,16 @@
+# CTS bug, fixed in 1.3.8.0: https://github.com/KhronosGroup/VK-GL-CTS/commit/a8466bf6ea98f6cd6733849ad8081775318a3e3e
+# drop this skip then either the fix is backported or the 1.3.8.0+ uprev lands, ie. either of these MRs:
+# https://gitlab.freedesktop.org/mesa/mesa/-/merge_requests/27459
+# https://gitlab.freedesktop.org/mesa/mesa/-/merge_requests/28229
+dEQP-VK.wsi.direct_drm.full_screen_exclusive.*
+dEQP-VK.wsi.direct_drm.maintenance1.*
+
+# Too slow
+dEQP-VK.draw.*.shader_layer.(vertex|tessellation)_shader_256
+dEQP-VK.memory.pipeline_barrier.transfer_src_transfer_dst.1048576
+dEQP-VK.reconvergence.(sub|work)group_uniform_control_flow_(ballot|elect).compute.nesting4.(0.40|7.10)
+
+# Hangs?
+# dEQP-VK.pipeline.*
+# dEQP-VK.transform_feedback.*
+# dEQP-VK.wsi.*

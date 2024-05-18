@@ -1,10 +1,45 @@
+KHR-GL46.limits.max_fragment_atomic_counter_buffers
+KHR-GL46.packed_pixels.varied_rectangle.depth_component32
+spec@!opengl 1.1@streaming-texture-leak
+spec@arb_bindless_texture@execution@images@uniform-struct
+spec@arb_gpu_shader5@texturegatheroffset@fs-r-0-unorm-2d-const
+spec@arb_gpu_shader5@texturegatheroffset@vs-rg-1-uint-2darray-const
 spec@arb_pixel_buffer_object@pbo-drawpixels
 spec@arb_shader_image_load_store@semantics@imageLoad/Tessellation control shader/r8/image2D test
+spec@arb_tessellation_shader@execution@tcs-input-read-nonconst
+spec@arb_tessellation_shader@execution@variable-indexing@tcs-output-array-float-index-wr
+spec@arb_tessellation_shader@execution@variable-indexing@tcs-output-array-float-index-wr-before-barrier
+spec@arb_tessellation_shader@execution@variable-indexing@tcs-output-array-vec2-index-wr
+spec@arb_tessellation_shader@execution@variable-indexing@tcs-output-array-vec2-index-wr-before-barrier
+spec@arb_tessellation_shader@execution@variable-indexing@tcs-output-array-vec3-index-wr
+spec@arb_tessellation_shader@execution@variable-indexing@tcs-output-array-vec3-index-wr-before-barrier
+spec@arb_tessellation_shader@execution@variable-indexing@tcs-output-array-vec4-index-wr
+spec@arb_tessellation_shader@execution@variable-indexing@tcs-output-array-vec4-index-wr-before-barrier
+spec@arb_texture_buffer_object@subdata-sync
+spec@arb_texture_multisample@texelfetch fs sampler2dmsarray 4 1x129x9-98x129x9
 spec@arb_vertex_attrib_64bit@execution@vs_in@vs-input-double_dvec4-double_dmat3-position
 spec@arb_vertex_attrib_64bit@execution@vs_in@vs-input-position-float_vec4_array3-double_dvec4
+spec@ext_external_objects@vk-image-display-muliple-textures
+spec@ext_framebuffer_multisample@clip-and-scissor-blit 2 msaa
+spec@ext_framebuffer_multisample@clip-and-scissor-blit 2 upsample
+spec@ext_framebuffer_multisample@clip-and-scissor-blit 4 upsample
+spec@ext_framebuffer_multisample@line-smooth 8
+spec@ext_framebuffer_multisample@polygon-smooth 2
+spec@ext_framebuffer_object@fbo-drawbuffers
+spec@glsl-1.10@execution@interpolation@interpolation-none-gl_frontsecondarycolor-smooth-none
+spec@glsl-1.10@execution@varying-packing@simple uvec3 separate
+spec@glsl-1.30@execution@built-in-functions@vs-op-bitxor-abs-not-ivec3-int
+spec@glsl-1.30@execution@interpolation@interpolation-smooth-gl_frontsecondarycolor-flat-fixed
 spec@glsl-1.30@linker@interpolation-qualifiers@default-gl_backsecondarycolor-flat-gl_secondarycolor
 spec@glsl-4.00@execution@built-in-functions@fs-op-add-dvec2-dvec2
+spec@glsl-4.00@execution@built-in-functions@gs-max-dvec4-double
+spec@glsl-4.00@execution@built-in-functions@gs-op-mult-double-dmat4x3
+spec@glsl-4.00@execution@built-in-functions@vs-distance-double-double
 spec@glsl-4.20@execution@vs_in@vs-input-ubyte_uint-short_int-double_dvec3-position
 spec@glsl-4.30@execution@built-in-functions@cs-lessthan-vec4-vec4
 spec@glsl-4.30@execution@built-in-functions@cs-op-assign-sub-mat3x2-mat3x2
+spec@glsl-4.30@execution@built-in-functions@cs-op-rshift-ivec4-int
 spec@glsl-4.30@execution@built-in-functions@cs-op-uplus-mat2
+spec@nv_primitive_restart@primitive-restart-draw-mode-lines
+spec@nv_primitive_restart@primitive-restart-draw-mode-polygon
+spec@nv_primitive_restart@primitive-restart-draw-mode-quad_strip

@@ -81,6 +81,16 @@ zink-anv-tgl-traces-restricted:
     PIGLIT_REPLAY_EXTRA_ARGS: --db-path ${CI_PROJECT_DIR}/replayer-db/ --minio_bucket=${S3_TRACIE_PRIVATE_BUCKET} --jwt-file=${S3_JWT_FILE}
   allow_failure: true
 
+zink-nvk-ga106-glcts-piglit-valve:
+  timeout: 45m
+  extends:
+    - .zink-nvk-glcts-piglit-valve
+    - .zink-nvk-manual-rules
+    - .nvk-ga106-valve
+  variables:
+    GPU_VERSION: zink-nvk
+    B2C_TIMEOUT_OVERALL_MINUTES: 40  # usual run time: 26min
+
 zink-tu-a618:
   extends:
     - .lava-test-deqp:arm64
