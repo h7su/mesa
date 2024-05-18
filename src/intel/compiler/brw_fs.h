@@ -36,6 +36,8 @@
 #include "brw_ir_performance.h"
 #include "compiler/nir/nir.h"
 
+#include <vector>
+
 struct bblock_t;
 namespace {
    struct acp_entry;
@@ -166,6 +168,8 @@ struct cs_thread_payload : public thread_payload {
 
    fs_reg local_invocation_id[3];
 
+   fs_reg inline_parameter;
+
 protected:
    fs_reg subgroup_id_;
 };
@@ -175,7 +179,6 @@ struct task_mesh_thread_payload : public cs_thread_payload {
 
    fs_reg extended_parameter_0;
    fs_reg local_index;
-   fs_reg inline_parameter;
 
    fs_reg urb_output;
 
@@ -185,6 +188,8 @@ struct task_mesh_thread_payload : public cs_thread_payload {
 
 struct bs_thread_payload : public thread_payload {
    bs_thread_payload(const fs_visitor &v);
+
+   fs_reg inline_parameter;
 
    fs_reg global_arg_ptr;
    fs_reg local_arg_ptr;
@@ -201,6 +206,36 @@ enum instruction_scheduler_mode {
 };
 
 class instruction_scheduler;
+
+enum pull_constant_type {
+   PULL_CONSTANT_TYPE_A32,
+   PULL_CONSTANT_TYPE_A64,
+};
+
+struct pull_constant_range {
+   /* How the range is pulled into register (A32 or A64 messages) */
+   enum pull_constant_type type;
+   /* Offset in bytes at which constants are pull from :
+    *   - the general state base offset passed in R0.0 with A32 messages
+    *   - the 64bit address located in R2.0 with A64 messages
+    */
+   uint32_t offset_B;
+   /* Length in bytes of constants to be loaded in registers (aligned to a
+    * dword)
+    */
+   uint32_t length_B;
+};
+
+struct constant_range {
+   /* Block identifier of the range */
+   uint16_t block;
+   /* Register offset at which ranges are loaded (in units of REG_SIZE) */
+   uint16_t reg_offset;
+   /* Length of the range in bytes */
+   uint16_t length_B;
+   /* Offset of the range in bytes */
+   uint32_t offset_B;
+};
 
 /**
  * The fragment shader front-end.
@@ -320,6 +355,13 @@ public:
 
    void calculate_cfg();
 
+   void append_constant_range(uint16_t block,
+                              uint32_t offset_B,
+                              uint32_t length_B);
+   fs_reg get_constant_reg(uint16_t block, uint32_t offset_B,
+                           enum brw_reg_type type);
+   fs_reg get_constant_reg(uint16_t block, fs_reg uniform);
+
    const struct brw_compiler *compiler;
    void *log_data; /* Passed to compiler->*_log functions */
 
@@ -355,12 +397,6 @@ public:
 
    /** Byte-offset for the next available spot in the scratch space buffer. */
    unsigned last_scratch;
-
-   /**
-    * Array mapping UNIFORM register numbers to the push parameter index,
-    * or -1 if this uniform register isn't being uploaded as a push constant.
-    */
-   int *push_constant_loc;
 
    fs_reg frag_depth;
    fs_reg frag_stencil;
@@ -440,6 +476,14 @@ public:
 
    /* The API selected subgroup size */
    unsigned api_subgroup_size; /**< 0, 8, 16, 32 */
+
+   /* Constants ranges pulled by the shader */
+   std::vector<struct pull_constant_range> pull_constant_ranges;
+
+   /* Constants ranges used by the shader */
+   std::vector<struct constant_range> constant_ranges;
+
+   bool constants_assigned;
 
    struct shader_stats shader_stats;
 
@@ -545,9 +589,49 @@ namespace brw {
    fetch_barycentric_reg(const brw::fs_builder &bld, uint8_t regs[2]);
 
    inline fs_reg
+   prog_uniform_reg(const struct brw_stage_prog_data *prog_data,
+                    unsigned block, unsigned offset_B, unsigned length_B,
+                    brw_reg_type type)
+   {
+      if (block == BRW_UBO_RANGE_PUSH_CONSTANT)
+         return fs_reg(UNIFORM, offset_B / 4, BRW_TYPE_UD);
+
+      int range_idx = -1;
+      for (unsigned i = 0; i < ARRAY_SIZE(prog_data->ubo_ranges); i++) {
+         const struct brw_ubo_range *range = &prog_data->ubo_ranges[i];
+         if (range->block == block &&
+             offset_B >= range->start_B &&
+             offset_B + length_B <= range->start_B + range->length_B) {
+            range_idx = i;
+            break;
+         }
+      }
+      if (range_idx == -1)
+         return fs_reg();
+
+      fs_reg r = fs_reg(UNIFORM, UBO_START + range_idx, type);
+      r.offset = offset_B - prog_data->ubo_ranges[range_idx].start_B;
+      return r;
+   }
+
+   inline fs_reg
+   prog_param_reg(const struct brw_stage_prog_data *prog_data,
+                  const struct brw_push_param &param)
+   {
+      fs_reg r;
+      if (param.block == BRW_UBO_RANGE_PUSH_CONSTANT) {
+         r = fs_reg(UNIFORM, param.offset_B / 4, BRW_TYPE_UD);
+         r.offset += param.offset_B % 4;
+      } else {
+         r = prog_uniform_reg(prog_data, param.block, param.offset_B, 4, BRW_TYPE_UD);
+      }
+      return r;
+   }
+
+   inline fs_reg
    dynamic_msaa_flags(const struct brw_wm_prog_data *wm_prog_data)
    {
-      return fs_reg(UNIFORM, wm_prog_data->msaa_flags_param, BRW_TYPE_UD);
+      return prog_param_reg(&wm_prog_data->base, wm_prog_data->msaa_flags_param);
    }
 
    void
@@ -608,7 +692,6 @@ bool brw_fs_lower_sends_overlapping_payload(fs_visitor &s);
 bool brw_fs_lower_simd_width(fs_visitor &s);
 bool brw_fs_lower_sub_sat(fs_visitor &s);
 bool brw_fs_lower_uniform_pull_constant_loads(fs_visitor &s);
-void brw_fs_lower_vgrfs_to_fixed_grfs(fs_visitor &s);
 
 bool brw_fs_opt_algebraic(fs_visitor &s);
 bool brw_fs_opt_bank_conflicts(fs_visitor &s);

@@ -182,7 +182,7 @@ fs_nir_setup_uniforms(fs_visitor &s)
    const intel_device_info *devinfo = s.devinfo;
 
    /* Only the first compile gets to set up uniforms. */
-   if (s.push_constant_loc)
+   if (s.constants_assigned)
       return;
 
    s.uniforms = s.nir->num_uniforms / 4;
@@ -4129,6 +4129,10 @@ fs_nir_emit_fs_intrinsic(nir_to_brw_state &ntb,
       break;
    }
 
+   case nir_intrinsic_load_fs_msaa_intel:
+      bld.MOV(dest, dynamic_msaa_flags(brw_wm_prog_data(s.prog_data)));
+      break;
+
    default:
       fs_nir_emit_intrinsic(ntb, bld, instr);
       break;
@@ -4561,6 +4565,16 @@ try_rebuild_resource(nir_to_brw_state &ntb, const brw::fs_builder &bld, nir_def 
             return src;
          }
 
+         case nir_intrinsic_load_driver_uniform_intel: {
+            unsigned base_offset = nir_intrinsic_base(intrin);
+            unsigned load_offset = nir_src_as_uint(intrin->src[0]);
+            return prog_uniform_reg(ntb.s.prog_data,
+                                    BRW_UBO_RANGE_DRIVER_INTERNAL,
+                                    base_offset + load_offset,
+                                    nir_intrinsic_range(intrin),
+                                    BRW_TYPE_UD);
+         }
+
          default:
             /* Execute the code below, since we have to generate new
              * instructions.
@@ -4669,6 +4683,21 @@ try_rebuild_resource(nir_to_brw_state &ntb, const brw::fs_builder &bld, nir_def 
             unsigned load_offset = nir_src_as_uint(intrin->src[0]);
             fs_reg src(UNIFORM, base_offset / 4, BRW_TYPE_UD);
             src.offset = load_offset + base_offset % 4;
+            ubld8.MOV(src, &ntb.resource_insts[def->index]);
+            break;
+         }
+
+         case nir_intrinsic_load_driver_uniform_intel: {
+            if (!nir_src_is_const(intrin->src[0]))
+               break;
+
+            unsigned base_offset = nir_intrinsic_base(intrin);
+            unsigned load_offset = nir_src_as_uint(intrin->src[0]);
+            fs_reg src = prog_uniform_reg(ntb.s.prog_data,
+                                          BRW_UBO_RANGE_DRIVER_INTERNAL,
+                                          base_offset + load_offset,
+                                          nir_intrinsic_range(intrin),
+                                          BRW_TYPE_UD);
             ubld8.MOV(src, &ntb.resource_insts[def->index]);
             break;
          }
@@ -6054,14 +6083,25 @@ fs_nir_emit_intrinsic(nir_to_brw_state &ntb,
       break;
    }
 
-   case nir_intrinsic_load_uniform: {
+   case nir_intrinsic_load_uniform:
+   case nir_intrinsic_load_driver_uniform_intel: {
       /* Offsets are in bytes but they should always aligned to
        * the type size
        */
       unsigned base_offset = nir_intrinsic_base(instr);
       assert(base_offset % 4 == 0 || base_offset % brw_type_size_bytes(dest.type) == 0);
 
-      fs_reg src(UNIFORM, base_offset / 4, dest.type);
+      fs_reg src;
+      if (instr->intrinsic == nir_intrinsic_load_uniform) {
+         src = fs_reg(UNIFORM, base_offset / 4, dest.type);
+      } else {
+         src = prog_uniform_reg(s.prog_data,
+                                BRW_UBO_RANGE_DRIVER_INTERNAL,
+                                base_offset,
+                                nir_intrinsic_range(instr),
+                                dest.type);
+         assert(src.file != BAD_FILE);
+      }
 
       if (nir_src_is_const(instr->src[0])) {
          unsigned load_offset = nir_src_as_uint(instr->src[0]);
@@ -6215,24 +6255,12 @@ fs_nir_emit_intrinsic(nir_to_brw_state &ntb,
          const unsigned load_offset = nir_src_as_uint(instr->src[1]);
          const unsigned ubo_block =
             brw_nir_ubo_surface_index_get_push_block(instr->src[0]);
-         const unsigned offset_256b = load_offset / 32;
-         const unsigned end_256b =
-            DIV_ROUND_UP(load_offset + type_size * instr->num_components, 32);
 
          /* See if we've selected this as a push constant candidate */
-         fs_reg push_reg;
-         for (int i = 0; i < 4; i++) {
-            const struct brw_ubo_range *range = &s.prog_data->ubo_ranges[i];
-            if (range->block == ubo_block &&
-                offset_256b >= range->start &&
-                end_256b <= range->start + range->length) {
-
-               push_reg = fs_reg(UNIFORM, UBO_START + i, dest.type);
-               push_reg.offset = load_offset - 32 * range->start;
-               break;
-            }
-         }
-
+         fs_reg push_reg = prog_uniform_reg(s.prog_data, ubo_block,
+                                            load_offset,
+                                            type_size * instr->num_components,
+                                            dest.type);
          if (push_reg.file != BAD_FILE) {
             for (unsigned i = 0; i < instr->num_components; i++) {
                bld.MOV(offset(dest, bld, i),

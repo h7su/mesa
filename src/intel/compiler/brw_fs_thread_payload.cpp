@@ -379,6 +379,12 @@ cs_thread_payload::cs_thread_payload(const fs_visitor &v)
       /* TODO: Fill out uses_btd_stack_ids automatically */
       if (prog_data->uses_btd_stack_ids)
          r += reg_unit(v.devinfo);
+
+      if (v.key->uses_inline_push_addr) {
+         prog_data->uses_inline_push_addr = true;
+         inline_parameter = brw_ud1_grf(r, 0);
+         r += reg_unit(v.devinfo);
+      }
    }
 
    num_regs = r;
@@ -466,6 +472,8 @@ task_mesh_thread_payload::task_mesh_thread_payload(fs_visitor &v)
 
 bs_thread_payload::bs_thread_payload(const fs_visitor &v)
 {
+   struct brw_bs_prog_data *prog_data = brw_bs_prog_data(v.prog_data);
+
    unsigned r = 0;
 
    /* R0: Thread header. */
@@ -475,6 +483,8 @@ bs_thread_payload::bs_thread_payload(const fs_visitor &v)
    r += reg_unit(v.devinfo);
 
    /* R2: Inline Parameter.  Used for argument addresses. */
+   prog_data->uses_inline_push_addr = v.key->uses_inline_push_addr;
+   inline_parameter = brw_ud1_grf(r, 0);
    global_arg_ptr = brw_ud1_grf(r, 0);
    local_arg_ptr = brw_ud1_grf(r, 2);
    r += reg_unit(v.devinfo);
