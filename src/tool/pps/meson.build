@@ -16,6 +16,10 @@ dep_drm = dependency('libdrm')
 pps_deps = [dep_drm, dep_perfetto]
 pps_deps += pps_datasources
 
+if with_gallium_freedreno or with_freedreno_vk
+  pps_sources += freedreno_xml_header_files
+endif
+
 lib_pps = static_library(
   'pps',
   sources: pps_sources,
