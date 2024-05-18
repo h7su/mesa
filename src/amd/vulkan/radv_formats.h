@@ -147,7 +147,7 @@ uint32_t radv_translate_buffer_numformat(const struct util_format_description *d
 
 uint32_t radv_translate_tex_dataformat(VkFormat format, const struct util_format_description *desc, int first_non_void);
 
-uint32_t radv_translate_tex_numformat(VkFormat format, const struct util_format_description *desc, int first_non_void);
+uint32_t radv_translate_tex_numformat(const struct util_format_description *desc, int first_non_void);
 
 bool radv_is_atomic_format_supported(VkFormat format);
 
@@ -158,12 +158,6 @@ bool radv_is_buffer_format_supported(VkFormat format, bool *scaled);
 bool radv_is_colorbuffer_format_supported(const struct radv_physical_device *pdev, VkFormat format, bool *blendable);
 
 bool radv_is_format_emulated(const struct radv_physical_device *pdev, VkFormat format);
-
-uint32_t radv_colorformat_endian_swap(uint32_t colorformat);
-
-uint32_t radv_translate_dbformat(VkFormat format);
-
-unsigned radv_translate_colorswap(VkFormat format, bool do_endian_swap);
 
 bool radv_format_pack_clear_color(VkFormat format, uint32_t clear_vals[2], VkClearColorValue *value);
 

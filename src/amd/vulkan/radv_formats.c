@@ -293,65 +293,11 @@ out_unknown:
 }
 
 uint32_t
-radv_translate_tex_numformat(VkFormat format, const struct util_format_description *desc, int first_non_void)
+radv_translate_tex_numformat(const struct util_format_description *desc, int first_non_void)
 {
-   assert(vk_format_get_plane_count(format) == 1);
+   assert(util_format_get_num_planes(desc->format) == 1);
 
-   switch (format) {
-   case VK_FORMAT_D24_UNORM_S8_UINT:
-      return V_008F14_IMG_NUM_FORMAT_UNORM;
-   default:
-      if (first_non_void < 0) {
-         if (vk_format_is_compressed(format)) {
-            switch (format) {
-            case VK_FORMAT_BC1_RGB_SRGB_BLOCK:
-            case VK_FORMAT_BC1_RGBA_SRGB_BLOCK:
-            case VK_FORMAT_BC2_SRGB_BLOCK:
-            case VK_FORMAT_BC3_SRGB_BLOCK:
-            case VK_FORMAT_BC7_SRGB_BLOCK:
-            case VK_FORMAT_ETC2_R8G8B8_SRGB_BLOCK:
-            case VK_FORMAT_ETC2_R8G8B8A1_SRGB_BLOCK:
-            case VK_FORMAT_ETC2_R8G8B8A8_SRGB_BLOCK:
-               return V_008F14_IMG_NUM_FORMAT_SRGB;
-            case VK_FORMAT_BC4_SNORM_BLOCK:
-            case VK_FORMAT_BC5_SNORM_BLOCK:
-            case VK_FORMAT_BC6H_SFLOAT_BLOCK:
-            case VK_FORMAT_EAC_R11_SNORM_BLOCK:
-            case VK_FORMAT_EAC_R11G11_SNORM_BLOCK:
-               return V_008F14_IMG_NUM_FORMAT_SNORM;
-            default:
-               return V_008F14_IMG_NUM_FORMAT_UNORM;
-            }
-         } else if (desc->layout == UTIL_FORMAT_LAYOUT_SUBSAMPLED) {
-            return V_008F14_IMG_NUM_FORMAT_UNORM;
-         } else {
-            return V_008F14_IMG_NUM_FORMAT_FLOAT;
-         }
-      } else if (desc->colorspace == UTIL_FORMAT_COLORSPACE_SRGB) {
-         return V_008F14_IMG_NUM_FORMAT_SRGB;
-      } else {
-         switch (desc->channel[first_non_void].type) {
-         case UTIL_FORMAT_TYPE_FLOAT:
-            return V_008F14_IMG_NUM_FORMAT_FLOAT;
-         case UTIL_FORMAT_TYPE_SIGNED:
-            if (desc->channel[first_non_void].normalized)
-               return V_008F14_IMG_NUM_FORMAT_SNORM;
-            else if (desc->channel[first_non_void].pure_integer)
-               return V_008F14_IMG_NUM_FORMAT_SINT;
-            else
-               return V_008F14_IMG_NUM_FORMAT_SSCALED;
-         case UTIL_FORMAT_TYPE_UNSIGNED:
-            if (desc->channel[first_non_void].normalized)
-               return V_008F14_IMG_NUM_FORMAT_UNORM;
-            else if (desc->channel[first_non_void].pure_integer)
-               return V_008F14_IMG_NUM_FORMAT_UINT;
-            else
-               return V_008F14_IMG_NUM_FORMAT_USCALED;
-         default:
-            return V_008F14_IMG_NUM_FORMAT_UNORM;
-         }
-      }
-   }
+   return ac_translate_tex_numformat(desc, first_non_void);
 }
 
 static bool
@@ -361,7 +307,7 @@ radv_is_sampler_format_supported(VkFormat format, bool *linear_sampling)
    uint32_t num_format;
    if (format == VK_FORMAT_UNDEFINED || format == VK_FORMAT_R64_UINT || format == VK_FORMAT_R64_SINT)
       return false;
-   num_format = radv_translate_tex_numformat(format, desc, vk_format_get_first_non_void_channel(format));
+   num_format = radv_translate_tex_numformat(desc, vk_format_get_first_non_void_channel(format));
 
    if (num_format == V_008F14_IMG_NUM_FORMAT_USCALED || num_format == V_008F14_IMG_NUM_FORMAT_SSCALED)
       return false;
@@ -394,9 +340,9 @@ radv_is_storage_image_format_supported(const struct radv_physical_device *pdev, 
       return false;
 
    data_format = radv_translate_tex_dataformat(format, desc, vk_format_get_first_non_void_channel(format));
-   num_format = radv_translate_tex_numformat(format, desc, vk_format_get_first_non_void_channel(format));
+   num_format = radv_translate_tex_numformat(desc, vk_format_get_first_non_void_channel(format));
 
-   if (data_format == ~0 || num_format == ~0)
+   if (data_format == ~0)
       return false;
 
    /* Extracted from the GCN3 ISA document. */
@@ -500,7 +446,7 @@ radv_is_colorbuffer_format_supported(const struct radv_physical_device *pdev, Vk
 {
    const struct util_format_description *desc = vk_format_description(format);
    uint32_t color_format = ac_get_cb_format(pdev->info.gfx_level, desc->format);
-   uint32_t color_swap = radv_translate_colorswap(format, false);
+   uint32_t color_swap = ac_translate_colorswap(pdev->info.gfx_level, desc->format, false);
    uint32_t color_num_format = ac_get_cb_number_type(desc->format);
 
    if (color_num_format == V_028C70_NUMBER_UINT || color_num_format == V_028C70_NUMBER_SINT ||
@@ -519,7 +465,10 @@ radv_is_colorbuffer_format_supported(const struct radv_physical_device *pdev, Vk
 static bool
 radv_is_zs_format_supported(VkFormat format)
 {
-   return radv_translate_dbformat(format) != V_028040_Z_INVALID || format == VK_FORMAT_S8_UINT;
+   if (format == VK_FORMAT_D24_UNORM_S8_UINT || format == VK_FORMAT_X8_D24_UNORM_PACK32)
+      return false;
+
+   return ac_translate_dbformat(vk_format_to_pipe_format(format)) != V_028040_Z_INVALID || format == VK_FORMAT_S8_UINT;
 }
 
 static bool
@@ -852,126 +801,6 @@ radv_physical_device_get_format_properties(struct radv_physical_device *pdev, Vk
    out_properties->linearTilingFeatures = linear;
    out_properties->optimalTilingFeatures = tiled;
    out_properties->bufferFeatures = buffer;
-}
-
-uint32_t
-radv_colorformat_endian_swap(uint32_t colorformat)
-{
-   if (0 /*UTIL_ARCH_BIG_ENDIAN*/) {
-      switch (colorformat) {
-         /* 8-bit buffers. */
-      case V_028C70_COLOR_8:
-         return V_028C70_ENDIAN_NONE;
-
-         /* 16-bit buffers. */
-      case V_028C70_COLOR_5_6_5:
-      case V_028C70_COLOR_1_5_5_5:
-      case V_028C70_COLOR_4_4_4_4:
-      case V_028C70_COLOR_16:
-      case V_028C70_COLOR_8_8:
-         return V_028C70_ENDIAN_8IN16;
-
-         /* 32-bit buffers. */
-      case V_028C70_COLOR_8_8_8_8:
-      case V_028C70_COLOR_2_10_10_10:
-      case V_028C70_COLOR_8_24:
-      case V_028C70_COLOR_24_8:
-      case V_028C70_COLOR_16_16:
-         return V_028C70_ENDIAN_8IN32;
-
-         /* 64-bit buffers. */
-      case V_028C70_COLOR_16_16_16_16:
-         return V_028C70_ENDIAN_8IN16;
-
-      case V_028C70_COLOR_32_32:
-         return V_028C70_ENDIAN_8IN32;
-
-         /* 128-bit buffers. */
-      case V_028C70_COLOR_32_32_32_32:
-         return V_028C70_ENDIAN_8IN32;
-      default:
-         return V_028C70_ENDIAN_NONE; /* Unsupported. */
-      }
-   } else {
-      return V_028C70_ENDIAN_NONE;
-   }
-}
-
-uint32_t
-radv_translate_dbformat(VkFormat format)
-{
-   switch (format) {
-   case VK_FORMAT_D16_UNORM:
-   case VK_FORMAT_D16_UNORM_S8_UINT:
-      return V_028040_Z_16;
-   case VK_FORMAT_D32_SFLOAT:
-   case VK_FORMAT_D32_SFLOAT_S8_UINT:
-      return V_028040_Z_32_FLOAT;
-   default:
-      return V_028040_Z_INVALID;
-   }
-}
-
-unsigned
-radv_translate_colorswap(VkFormat format, bool do_endian_swap)
-{
-   const struct util_format_description *desc = vk_format_description(format);
-
-#define HAS_SWIZZLE(chan, swz) (desc->swizzle[chan] == PIPE_SWIZZLE_##swz)
-
-   if (format == VK_FORMAT_B10G11R11_UFLOAT_PACK32)
-      return V_028C70_SWAP_STD;
-
-   if (format == VK_FORMAT_E5B9G9R9_UFLOAT_PACK32)
-      return V_028C70_SWAP_STD;
-
-   if (desc->layout != UTIL_FORMAT_LAYOUT_PLAIN)
-      return ~0U;
-
-   switch (desc->nr_channels) {
-   case 1:
-      if (HAS_SWIZZLE(0, X))
-         return V_028C70_SWAP_STD; /* X___ */
-      else if (HAS_SWIZZLE(3, X))
-         return V_028C70_SWAP_ALT_REV; /* ___X */
-      break;
-   case 2:
-      if ((HAS_SWIZZLE(0, X) && HAS_SWIZZLE(1, Y)) || (HAS_SWIZZLE(0, X) && HAS_SWIZZLE(1, NONE)) ||
-          (HAS_SWIZZLE(0, NONE) && HAS_SWIZZLE(1, Y)))
-         return V_028C70_SWAP_STD; /* XY__ */
-      else if ((HAS_SWIZZLE(0, Y) && HAS_SWIZZLE(1, X)) || (HAS_SWIZZLE(0, Y) && HAS_SWIZZLE(1, NONE)) ||
-               (HAS_SWIZZLE(0, NONE) && HAS_SWIZZLE(1, X)))
-         /* YX__ */
-         return (do_endian_swap ? V_028C70_SWAP_STD : V_028C70_SWAP_STD_REV);
-      else if (HAS_SWIZZLE(0, X) && HAS_SWIZZLE(3, Y))
-         return V_028C70_SWAP_ALT; /* X__Y */
-      else if (HAS_SWIZZLE(0, Y) && HAS_SWIZZLE(3, X))
-         return V_028C70_SWAP_ALT_REV; /* Y__X */
-      break;
-   case 3:
-      if (HAS_SWIZZLE(0, X))
-         return (do_endian_swap ? V_028C70_SWAP_STD_REV : V_028C70_SWAP_STD);
-      else if (HAS_SWIZZLE(0, Z))
-         return V_028C70_SWAP_STD_REV; /* ZYX */
-      break;
-   case 4:
-      /* check the middle channels, the 1st and 4th channel can be NONE */
-      if (HAS_SWIZZLE(1, Y) && HAS_SWIZZLE(2, Z)) {
-         return V_028C70_SWAP_STD; /* XYZW */
-      } else if (HAS_SWIZZLE(1, Z) && HAS_SWIZZLE(2, Y)) {
-         return V_028C70_SWAP_STD_REV; /* WZYX */
-      } else if (HAS_SWIZZLE(1, Y) && HAS_SWIZZLE(2, X)) {
-         return V_028C70_SWAP_ALT; /* ZYXW */
-      } else if (HAS_SWIZZLE(1, Z) && HAS_SWIZZLE(2, W)) {
-         /* YZWX */
-         if (desc->is_array)
-            return V_028C70_SWAP_ALT_REV;
-         else
-            return (do_endian_swap ? V_028C70_SWAP_ALT : V_028C70_SWAP_ALT_REV);
-      }
-      break;
-   }
-   return ~0U;
 }
 
 bool

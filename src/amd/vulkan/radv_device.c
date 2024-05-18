@@ -74,6 +74,8 @@ typedef void *drmDevicePtr;
 #include "ac_llvm_util.h"
 #endif
 
+#include "ac_formats.h"
+
 static bool
 radv_spm_trace_enabled(struct radv_instance *instance)
 {
@@ -1683,8 +1685,8 @@ radv_initialise_color_surface(struct radv_device *device, struct radv_color_buff
    format = ac_get_cb_format(pdev->info.gfx_level, desc->format);
    assert(format != V_028C70_COLOR_INVALID);
 
-   swap = radv_translate_colorswap(iview->vk.format, false);
-   endian = radv_colorformat_endian_swap(format);
+   swap = ac_translate_colorswap(pdev->info.gfx_level, vk_format_to_pipe_format(iview->vk.format), false);
+   endian = ac_colorformat_endian_swap(format);
 
    /* blend clamp should be set for all NORM/SRGB types */
    if (ntype == V_028C70_NUMBER_UNORM || ntype == V_028C70_NUMBER_SNORM || ntype == V_028C70_NUMBER_SRGB)
@@ -1875,7 +1877,7 @@ radv_initialise_ds_surface(const struct radv_device *device, struct radv_ds_buff
 
    memset(ds, 0, sizeof(*ds));
 
-   format = radv_translate_dbformat(iview->image->vk.format);
+   format = ac_translate_dbformat(vk_format_to_pipe_format(iview->image->vk.format));
    stencil_format = surf->has_stencil ? V_028044_STENCIL_8 : V_028044_STENCIL_INVALID;
 
    uint32_t max_slice = radv_surface_max_layer_count(iview) - 1;

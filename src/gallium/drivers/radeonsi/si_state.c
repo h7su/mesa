@@ -1976,71 +1976,6 @@ static void si_emit_db_render_state(struct si_context *sctx, unsigned index)
 }
 
 /*
- * format translation
- */
-
-static uint32_t si_colorformat_endian_swap(uint32_t colorformat)
-{
-   if (UTIL_ARCH_BIG_ENDIAN) {
-      switch (colorformat) {
-      /* 8-bit buffers. */
-      case V_028C70_COLOR_8:
-         return V_028C70_ENDIAN_NONE;
-
-      /* 16-bit buffers. */
-      case V_028C70_COLOR_5_6_5:
-      case V_028C70_COLOR_1_5_5_5:
-      case V_028C70_COLOR_4_4_4_4:
-      case V_028C70_COLOR_16:
-      case V_028C70_COLOR_8_8:
-         return V_028C70_ENDIAN_8IN16;
-
-      /* 32-bit buffers. */
-      case V_028C70_COLOR_8_8_8_8:
-      case V_028C70_COLOR_2_10_10_10:
-      case V_028C70_COLOR_10_10_10_2:
-      case V_028C70_COLOR_8_24:
-      case V_028C70_COLOR_24_8:
-      case V_028C70_COLOR_16_16:
-         return V_028C70_ENDIAN_8IN32;
-
-      /* 64-bit buffers. */
-      case V_028C70_COLOR_16_16_16_16:
-         return V_028C70_ENDIAN_8IN16;
-
-      case V_028C70_COLOR_32_32:
-         return V_028C70_ENDIAN_8IN32;
-
-      /* 128-bit buffers. */
-      case V_028C70_COLOR_32_32_32_32:
-         return V_028C70_ENDIAN_8IN32;
-      default:
-         return V_028C70_ENDIAN_NONE; /* Unsupported. */
-      }
-   } else {
-      return V_028C70_ENDIAN_NONE;
-   }
-}
-
-static uint32_t si_translate_dbformat(enum pipe_format format)
-{
-   switch (format) {
-   case PIPE_FORMAT_Z16_UNORM:
-      return V_028040_Z_16;
-   case PIPE_FORMAT_S8_UINT_Z24_UNORM:
-   case PIPE_FORMAT_X8Z24_UNORM:
-   case PIPE_FORMAT_Z24X8_UNORM:
-   case PIPE_FORMAT_Z24_UNORM_S8_UINT:
-      return V_028040_Z_24; /* not present on GFX12 */
-   case PIPE_FORMAT_Z32_FLOAT:
-   case PIPE_FORMAT_Z32_FLOAT_S8X24_UINT:
-      return V_028040_Z_32_FLOAT;
-   default:
-      return V_028040_Z_INVALID;
-   }
-}
-
-/*
  * Texture translation
  */
 
@@ -2525,12 +2460,15 @@ static bool si_is_colorbuffer_format_supported(enum amd_gfx_level gfx_level,
                                                enum pipe_format format)
 {
    return ac_get_cb_format(gfx_level, format) != V_028C70_COLOR_INVALID &&
-          si_translate_colorswap(gfx_level, format, false) != ~0U;
+          ac_translate_colorswap(gfx_level, format, false) != ~0U;
 }
 
 static bool si_is_zs_format_supported(enum pipe_format format)
 {
-   return si_translate_dbformat(format) != V_028040_Z_INVALID;
+   if (format == PIPE_FORMAT_Z16_UNORM_S8_UINT)
+      return false;
+
+   return ac_translate_dbformat(format) != V_028040_Z_INVALID;
 }
 
 static bool si_is_format_supported(struct pipe_screen *screen, enum pipe_format format,
@@ -2667,8 +2605,8 @@ static void si_initialize_color_surface(struct si_context *sctx, struct si_surfa
       PRINT_ERR("Invalid CB format: %d, disabling CB.\n", surf->base.format);
    }
    assert(format != V_028C70_COLOR_INVALID);
-   swap = si_translate_colorswap(sctx->gfx_level, surf->base.format, false);
-   endian = si_colorformat_endian_swap(format);
+   swap = ac_translate_colorswap(sctx->gfx_level, surf->base.format, false);
+   endian = ac_colorformat_endian_swap(format);
 
    /* blend clamp should be set for all NORM/SRGB types */
    if (ntype == V_028C70_NUMBER_UNORM || ntype == V_028C70_NUMBER_SNORM ||
@@ -2845,7 +2783,7 @@ static void si_init_depth_surface(struct si_context *sctx, struct si_surface *su
    unsigned level = surf->base.u.tex.level;
    unsigned format, stencil_format;
 
-   format = si_translate_dbformat(tex->db_render_format);
+   format = ac_translate_dbformat(tex->db_render_format);
    stencil_format = tex->surface.has_stencil ? V_028044_STENCIL_8 : V_028044_STENCIL_INVALID;
 
    assert(format != V_028040_Z_24 || sctx->gfx_level < GFX12);
@@ -4967,71 +4905,7 @@ static void si_make_texture_descriptor(struct si_screen *screen, struct si_textu
 
    first_non_void = util_format_get_first_non_void_channel(pipe_format);
 
-   switch (pipe_format) {
-   case PIPE_FORMAT_S8_UINT_Z24_UNORM:
-      num_format = V_008F14_IMG_NUM_FORMAT_UNORM;
-      break;
-   default:
-      if (first_non_void < 0) {
-         if (util_format_is_compressed(pipe_format)) {
-            switch (pipe_format) {
-            case PIPE_FORMAT_DXT1_SRGB:
-            case PIPE_FORMAT_DXT1_SRGBA:
-            case PIPE_FORMAT_DXT3_SRGBA:
-            case PIPE_FORMAT_DXT5_SRGBA:
-            case PIPE_FORMAT_BPTC_SRGBA:
-            case PIPE_FORMAT_ETC2_SRGB8:
-            case PIPE_FORMAT_ETC2_SRGB8A1:
-            case PIPE_FORMAT_ETC2_SRGBA8:
-               num_format = V_008F14_IMG_NUM_FORMAT_SRGB;
-               break;
-            case PIPE_FORMAT_RGTC1_SNORM:
-            case PIPE_FORMAT_LATC1_SNORM:
-            case PIPE_FORMAT_RGTC2_SNORM:
-            case PIPE_FORMAT_LATC2_SNORM:
-            case PIPE_FORMAT_ETC2_R11_SNORM:
-            case PIPE_FORMAT_ETC2_RG11_SNORM:
-            /* implies float, so use SNORM/UNORM to determine
-               whether data is signed or not */
-            case PIPE_FORMAT_BPTC_RGB_FLOAT:
-               num_format = V_008F14_IMG_NUM_FORMAT_SNORM;
-               break;
-            default:
-               num_format = V_008F14_IMG_NUM_FORMAT_UNORM;
-               break;
-            }
-         } else if (desc->layout == UTIL_FORMAT_LAYOUT_SUBSAMPLED) {
-            num_format = V_008F14_IMG_NUM_FORMAT_UNORM;
-         } else {
-            num_format = V_008F14_IMG_NUM_FORMAT_FLOAT;
-         }
-      } else if (desc->colorspace == UTIL_FORMAT_COLORSPACE_SRGB) {
-         num_format = V_008F14_IMG_NUM_FORMAT_SRGB;
-      } else {
-         num_format = V_008F14_IMG_NUM_FORMAT_UNORM;
-
-         switch (desc->channel[first_non_void].type) {
-         case UTIL_FORMAT_TYPE_FLOAT:
-            num_format = V_008F14_IMG_NUM_FORMAT_FLOAT;
-            break;
-         case UTIL_FORMAT_TYPE_SIGNED:
-            if (desc->channel[first_non_void].normalized)
-               num_format = V_008F14_IMG_NUM_FORMAT_SNORM;
-            else if (desc->channel[first_non_void].pure_integer)
-               num_format = V_008F14_IMG_NUM_FORMAT_SINT;
-            else
-               num_format = V_008F14_IMG_NUM_FORMAT_SSCALED;
-            break;
-         case UTIL_FORMAT_TYPE_UNSIGNED:
-            if (desc->channel[first_non_void].normalized)
-               num_format = V_008F14_IMG_NUM_FORMAT_UNORM;
-            else if (desc->channel[first_non_void].pure_integer)
-               num_format = V_008F14_IMG_NUM_FORMAT_UINT;
-            else
-               num_format = V_008F14_IMG_NUM_FORMAT_USCALED;
-         }
-      }
-   }
+   num_format = ac_translate_tex_numformat(desc, first_non_void);
 
    data_format = si_translate_texformat(&screen->b, pipe_format, desc, first_non_void);
    if (data_format == ~0) {
