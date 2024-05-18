@@ -1236,6 +1236,7 @@ x11_wait_for_explicit_sync_release_submission(struct x11_swapchain *chain,
                                               uint64_t rel_timeout_ns,
                                               uint32_t *image_index)
 {
+#ifdef HAVE_LIBDRM
    STACK_ARRAY(struct wsi_image*, images, chain->base.image_count);
    for (uint32_t i = 0; i < chain->base.image_count; i++)
       images[i] = &chain->images[i].base;
@@ -1248,6 +1249,9 @@ x11_wait_for_explicit_sync_release_submission(struct x11_swapchain *chain,
                                              image_index);
    STACK_ARRAY_FINISH(images);
    return result;
+#else
+   return VK_ERROR_FEATURE_NOT_PRESENT;
+#endif
 }
 
 /* XXX this belongs in presentproto */

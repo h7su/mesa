@@ -1883,6 +1883,7 @@ wsi_wl_swapchain_acquire_next_image_explicit(struct wsi_swapchain *wsi_chain,
                                              const VkAcquireNextImageInfoKHR *info,
                                              uint32_t *image_index)
 {
+#ifdef HAVE_LIBDRM
    struct wsi_wl_swapchain *chain = (struct wsi_wl_swapchain *)wsi_chain;
    uint64_t id = 0;
 
@@ -1907,6 +1908,9 @@ wsi_wl_swapchain_acquire_next_image_explicit(struct wsi_swapchain *wsi_chain,
       chain->images[*image_index].flow_id = id;
 
    return result;
+#else
+   return VK_ERROR_FEATURE_NOT_PRESENT;
+#endif
 }
 
 static VkResult
