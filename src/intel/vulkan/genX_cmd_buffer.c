@@ -139,7 +139,8 @@ genX(cmd_buffer_emit_state_base_address)(struct anv_cmd_buffer *cmd_buffer)
    if (cmd_buffer->state.pending_db_mode ==
        ANV_CMD_DESCRIPTOR_BUFFER_MODE_UNKNOWN) {
       cmd_buffer->state.pending_db_mode =
-         cmd_buffer->device->vk.enabled_extensions.EXT_descriptor_buffer ?
+         cmd_buffer->device->vk.enabled_extensions.EXT_descriptor_buffer &&
+         !cmd_buffer->device->physical->instance->legacy_descriptors ?
          ANV_CMD_DESCRIPTOR_BUFFER_MODE_BUFFER :
          ANV_CMD_DESCRIPTOR_BUFFER_MODE_LEGACY;
    }

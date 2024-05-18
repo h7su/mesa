@@ -780,6 +780,10 @@
    DRI_CONF_OPT_B(force_indirect_descriptors, def, \
                   "Use an indirection to access buffer/image/texture/sampler handles")
 
+#define DRI_CONF_ANV_LEGACY_DESCRIPTORS(def) \
+   DRI_CONF_OPT_B(legacy_descriptors, def, \
+                  "When EXT_descriptor_buffer is enabled, assumed it's not used")
+
 #define DRI_CONF_ANV_DISABLE_FCV(def) \
    DRI_CONF_OPT_B(anv_disable_fcv, def, \
                   "Disable FCV optimization")
