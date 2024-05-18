@@ -1354,7 +1354,7 @@ radv_update_descriptor_sets_impl(struct radv_device *device, struct radv_cmd_buf
             break;
          }
          ptr += binding_layout->size / 4;
-         ++buffer_list;
+         buffer_list += radv_descriptor_type_buffer_count(writeset->descriptorType);
       }
    }
 
@@ -1632,7 +1632,8 @@ radv_update_descriptor_set_with_template_impl(struct radv_device *device, struct
          }
          pSrc += templ->entry[i].src_stride;
          pDst += templ->entry[i].dst_stride;
-         ++buffer_list;
+
+         buffer_list += radv_descriptor_type_buffer_count(templ->entry[i].descriptor_type);
       }
    }
 }
