@@ -118,7 +118,8 @@ class GPUInfo(Struct):
     def __init__(self, chip, gmem_align_w, gmem_align_h,
                  tile_align_w, tile_align_h,
                  tile_max_w, tile_max_h, num_vsc_pipes,
-                 cs_shared_mem_size, num_sp_cores, wave_granularity, fibers_per_sp):
+                 cs_shared_mem_size, num_sp_cores, threadsize_base,
+                 wave_granularity, max_waves, fibers_per_sp):
         self.chip          = chip.value
         self.gmem_align_w  = gmem_align_w
         self.gmem_align_h  = gmem_align_h
@@ -129,7 +130,9 @@ class GPUInfo(Struct):
         self.num_vsc_pipes = num_vsc_pipes
         self.cs_shared_mem_size = cs_shared_mem_size
         self.num_sp_cores  = num_sp_cores
+        self.threadsize_base = threadsize_base
         self.wave_granularity = wave_granularity
+        self.max_waves     = max_waves
         self.fibers_per_sp = fibers_per_sp
 
         s.gpu_infos.append(self)
@@ -142,8 +145,8 @@ class A6xxGPUInfo(GPUInfo):
     """
     def __init__(self, chip, template, num_ccu,
                  tile_align_w, tile_align_h, num_vsc_pipes,
-                 cs_shared_mem_size, wave_granularity, fibers_per_sp,
-                 magic_regs, raw_magic_regs = None):
+                 cs_shared_mem_size, threadsize_base, wave_granularity,
+                 fibers_per_sp, max_waves, magic_regs, raw_magic_regs = None):
         if chip == CHIP.A6XX:
             tile_max_w   = 1024 # max_bitfield_val(5, 0, 5)
             tile_max_h   = max_bitfield_val(14, 8, 4) # 1008
@@ -159,7 +162,9 @@ class A6xxGPUInfo(GPUInfo):
                          num_vsc_pipes = num_vsc_pipes,
                          cs_shared_mem_size = cs_shared_mem_size,
                          num_sp_cores = num_ccu, # The # of SP cores seems to always match # of CCU
+                         threadsize_base    = threadsize_base,
                          wave_granularity   = wave_granularity,
+                         max_waves    = max_waves,
                          fibers_per_sp      = fibers_per_sp)
 
         self.num_ccu = num_ccu
@@ -200,7 +205,9 @@ add_gpus([
         num_vsc_pipes = 8,
         cs_shared_mem_size = 0,
         num_sp_cores = 0, # TODO
+        threadsize_base = 8,
         wave_granularity = 2,
+        max_waves = 16,
         fibers_per_sp = 0, # TODO
     ))
 
@@ -219,7 +226,9 @@ add_gpus([
         num_vsc_pipes = 8,
         cs_shared_mem_size = 32 * 1024,
         num_sp_cores = 0, # TODO
+        threadsize_base = 8,
         wave_granularity = 2,
+        max_waves = 16,
         fibers_per_sp = 0, # TODO
     ))
 
@@ -236,7 +245,9 @@ add_gpus([
         num_vsc_pipes = 8,
         cs_shared_mem_size = 32 * 1024,
         num_sp_cores = 0, # TODO
+        threadsize_base = 32, # TODO: Confirm this
         wave_granularity = 2,
+        max_waves = 16,
         fibers_per_sp = 0, # TODO
     ))
 
@@ -253,7 +264,9 @@ add_gpus([
         num_vsc_pipes = 16,
         cs_shared_mem_size = 32 * 1024,
         num_sp_cores = 1,
+        threadsize_base = 32,
         wave_granularity = 2,
+        max_waves = 16,
         fibers_per_sp = 64 * 16, # Lowest number that didn't fault on spillall fs-varying-array-mat4-col-row-rd.
     ))
 
@@ -269,7 +282,9 @@ add_gpus([
         num_vsc_pipes = 16,
         cs_shared_mem_size = 32 * 1024,
         num_sp_cores = 2,
+        threadsize_base = 32,
         wave_granularity = 2,
+        max_waves = 16,
         fibers_per_sp = 64 * 16, # Lowest number that didn't fault on spillall fs-varying-array-mat4-col-row-rd.
     ))
 
@@ -285,7 +300,9 @@ add_gpus([
         num_vsc_pipes = 16,
         cs_shared_mem_size = 32 * 1024,
         num_sp_cores = 4,
+        threadsize_base = 32,
         wave_granularity = 2,
+        max_waves = 16,
         fibers_per_sp = 64 * 16, # Lowest number that didn't fault on spillall fs-varying-array-mat4-col-row-rd.
     ))
 
@@ -433,7 +450,9 @@ add_gpus([
         tile_align_h = 16,
         num_vsc_pipes = 16,
         cs_shared_mem_size = 16 * 1024,
+        threadsize_base = 64,
         wave_granularity = 1,
+        max_waves = 16,
         fibers_per_sp = 128 * 16,
         magic_regs = dict(
             PC_POWER_CNTL = 0,
@@ -465,7 +484,9 @@ add_gpus([
         tile_align_h = 32,
         num_vsc_pipes = 32,
         cs_shared_mem_size = 32 * 1024,
+        threadsize_base = 64,
         wave_granularity = 2,
+        max_waves = 16,
         fibers_per_sp = 128 * 16,
         magic_regs = dict(
             PC_POWER_CNTL = 0,
@@ -494,7 +515,9 @@ add_gpus([
         tile_align_h = 16,
         num_vsc_pipes = 32,
         cs_shared_mem_size = 32 * 1024,
+        threadsize_base = 64,
         wave_granularity = 2,
+        max_waves = 16,
         fibers_per_sp = 128 * 16,
         magic_regs = dict(
             PC_POWER_CNTL = 0,
@@ -523,7 +546,9 @@ add_gpus([
         tile_align_h = 16,
         num_vsc_pipes = 32,
         cs_shared_mem_size = 32 * 1024,
+        threadsize_base = 64,
         wave_granularity = 2,
+        max_waves = 16,
         fibers_per_sp = 128 * 16,
         magic_regs = dict(
             PC_POWER_CNTL = 1,
@@ -552,7 +577,9 @@ add_gpus([
         tile_align_h = 16,
         num_vsc_pipes = 32,
         cs_shared_mem_size = 32 * 1024,
+        threadsize_base = 64,
         wave_granularity = 2,
+        max_waves = 16,
         fibers_per_sp = 128 * 4 * 16,
         magic_regs = dict(
             PC_POWER_CNTL = 1,
@@ -581,7 +608,9 @@ add_gpus([
         tile_align_h = 32,
         num_vsc_pipes = 32,
         cs_shared_mem_size = 32 * 1024,
+        threadsize_base = 64,
         wave_granularity = 2,
+        max_waves = 16,
         fibers_per_sp = 128 * 4 * 16,
         magic_regs = dict(
             PC_POWER_CNTL = 3,
@@ -610,7 +639,9 @@ add_gpus([
         tile_align_h = 16,
         num_vsc_pipes = 32,
         cs_shared_mem_size = 32 * 1024,
+        threadsize_base = 64,
         wave_granularity = 2,
+        max_waves = 16,
         fibers_per_sp = 128 * 2 * 16,
         magic_regs = dict(
             PC_POWER_CNTL = 2,
@@ -645,7 +676,9 @@ add_gpus([
         tile_align_h = 16,
         num_vsc_pipes = 32,
         cs_shared_mem_size = 32 * 1024,
+        threadsize_base = 64,
         wave_granularity = 2,
+        max_waves = 16,
         fibers_per_sp = 128 * 2 * 16,
         magic_regs = dict(
             PC_POWER_CNTL = 1,
@@ -674,7 +707,9 @@ add_gpus([
         tile_align_h = 16,
         num_vsc_pipes = 32,
         cs_shared_mem_size = 32 * 1024,
+        threadsize_base = 64,
         wave_granularity = 2,
+        max_waves = 16,
         fibers_per_sp = 128 * 2 * 16,
         magic_regs = dict(
             PC_POWER_CNTL = 2,
@@ -703,7 +738,9 @@ add_gpus([
         tile_align_h = 16,
         num_vsc_pipes = 32,
         cs_shared_mem_size = 32 * 1024,
+        threadsize_base = 64,
         wave_granularity = 2,
+        max_waves = 16,
         fibers_per_sp = 128 * 4 * 16,
         magic_regs = dict(
             PC_POWER_CNTL = 2,
@@ -733,7 +770,9 @@ add_gpus([
         tile_align_h = 32,
         num_vsc_pipes = 32,
         cs_shared_mem_size = 32 * 1024,
+        threadsize_base = 64,
         wave_granularity = 2,
+        max_waves = 16,
         fibers_per_sp = 128 * 2 * 16,
         magic_regs = dict(
             PC_POWER_CNTL = 7,
@@ -910,7 +949,9 @@ add_gpus([
         tile_align_h = 32,
         num_vsc_pipes = 32,
         cs_shared_mem_size = 32 * 1024,
+        threadsize_base = 64,
         wave_granularity = 2,
+        max_waves = 16,
         fibers_per_sp = 128 * 2 * 16,
         magic_regs = a730_magic_regs,
         raw_magic_regs = a730_raw_magic_regs,
@@ -927,7 +968,9 @@ add_gpus([
         tile_align_h = 32,
         num_vsc_pipes = 32,
         cs_shared_mem_size = 32 * 1024,
+        threadsize_base = 64,
         wave_granularity = 2,
+        max_waves = 16,
         fibers_per_sp = 128 * 2 * 16,
         magic_regs = a730_magic_regs,
         raw_magic_regs = a730_raw_magic_regs,
@@ -947,7 +990,9 @@ add_gpus([
         tile_align_h = 32,
         num_vsc_pipes = 32,
         cs_shared_mem_size = 32 * 1024,
+        threadsize_base = 64,
         wave_granularity = 2,
+        max_waves = 16,
         fibers_per_sp = 128 * 2 * 16,
         magic_regs = dict(
             # PC_POWER_CNTL = 7,
@@ -1032,7 +1077,9 @@ add_gpus([
     tile_align_h = 32,
     num_vsc_pipes = 32,
     cs_shared_mem_size = 32 * 1024,
+    threadsize_base = 64,
     wave_granularity = 2,
+    max_waves = 16,
     fibers_per_sp = 128 * 2 * 16,
     magic_regs = dict(
         # PC_POWER_CNTL = 7,
@@ -1116,7 +1163,9 @@ add_gpus([
         tile_align_h = 32,
         num_vsc_pipes = 32,
         cs_shared_mem_size = 32 * 1024,
+        threadsize_base = 64,
         wave_granularity = 2,
+        max_waves = 16,
         fibers_per_sp = 128 * 2 * 16,
         magic_regs = dict(
             TPL1_DBG_ECO_CNTL = 0x11100000,

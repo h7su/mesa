@@ -51,7 +51,11 @@ struct fd_dev_info {
 
    uint32_t cs_shared_mem_size;
 
+   uint32_t threadsize_base;
+
    int wave_granularity;
+
+   uint32_t max_waves;
 
    /* Information for private memory calculations */
    uint32_t fibers_per_sp;
