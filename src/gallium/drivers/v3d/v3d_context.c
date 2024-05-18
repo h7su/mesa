@@ -424,6 +424,7 @@ v3d_context_create(struct pipe_screen *pscreen, void *priv, unsigned flags)
 
         v3d->sample_mask = (1 << V3D_MAX_SAMPLES) - 1;
         v3d->active_queries = true;
+        util_dynarray_init(&v3d->global_buffers, v3d);
 
         return &v3d->base;
 

@@ -321,6 +321,11 @@ v3d_nir_lower_io_instr(struct v3d_compile *c, nir_builder *b,
                         v3d_nir_lower_vertex_input(c, b, intr);
                 break;
 
+        case nir_intrinsic_load_kernel_input:
+                /* it's in bytes already and behaves the same */
+                intr->intrinsic = nir_intrinsic_load_uniform;
+                break;
+
         case nir_intrinsic_store_output:
                 v3d_nir_lower_vpm_output(c, b, intr, state);
                 break;
