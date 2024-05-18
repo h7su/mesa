@@ -22,14 +22,22 @@
  */
 
 #include "v3dv_private.h"
-
-/* We don't expect that the packets we use in this file change across hw
- * versions, so we just explicitly set the V3D_VERSION and include v3dx_pack
- * here
- */
-#define V3D_VERSION 42
 #include "broadcom/common/v3d_macros.h"
 #include "broadcom/cle/v3dx_pack.h"
+
+/* The Control List Executor (CLE) pre-fetches V3D_CLE_READAHEAD bytes from
+ * the Control List buffer. The usage of these last bytes should be avoided or
+ * the CLE would pre-fetch the data after the end of the CL buffer, reporting
+ * the kernel "MMU error from client CLE".
+ */
+#if V3D_VERSION == 42
+#define V3D_CLE_READAHEAD 256
+#define V3D_CLE_BUFFER_MIN_SIZE 4096
+#endif
+#if V3D_VERSION >= 71
+#define V3D_CLE_READAHEAD 1024
+#define V3D_CLE_BUFFER_MIN_SIZE 16384
+#endif
 
 void
 v3dv_cl_init(struct v3dv_job *job, struct v3dv_cl *cl)
@@ -55,14 +63,19 @@ v3dv_cl_destroy(struct v3dv_cl *cl)
    v3dv_cl_init(NULL, cl);
 }
 
+/* The last bytes of the CLE buffer could are unusable because of readahead
+ * prefetch, so we need to take it into account when allocating a new BO for
+ * the CL.
+ */
 static bool
-cl_alloc_bo(struct v3dv_cl *cl, uint32_t space, bool use_branch)
+cl_alloc_bo(struct v3dv_cl *cl, uint32_t space, uint32_t unusable_space,
+            bool use_branch)
 {
    /* If we are growing, double the BO allocation size to reduce the number
     * of allocations with large command buffers. This has a very significant
     * impact on the number of draw calls per second reported by vkoverhead.
     */
-   space = align(space, 4096);
+   space = align(space + unusable_space, V3D_CLE_BUFFER_MIN_SIZE);
    if (cl->bo)
       space = MAX2(cl->bo->size * 2, space);
 
@@ -94,7 +107,11 @@ cl_alloc_bo(struct v3dv_cl *cl, uint32_t space, bool use_branch)
 
    cl->bo = bo;
    cl->base = cl->bo->map;
-   cl->size = cl->bo->size;
+   /* Take only into account the usable size of the BO to guarantee that
+    * we never write in the last bytes of the CL buffer because of the
+    * readahead of the CLE
+    */
+   cl->size = cl->bo->size - unusable_space;
    cl->next = cl->base;
 
    return true;
@@ -110,7 +127,7 @@ v3dv_cl_ensure_space(struct v3dv_cl *cl, uint32_t space, uint32_t alignment)
       return offset;
    }
 
-   cl_alloc_bo(cl, space, false);
+   cl_alloc_bo(cl, space, 0, false);
    return 0;
 }
 
@@ -123,24 +140,21 @@ v3dv_cl_ensure_space_with_branch(struct v3dv_cl *cl, uint32_t space)
     * end with a 'return from sub list' command.
     */
    bool needs_return_from_sub_list = false;
-   if (cl->job->type == V3DV_JOB_TYPE_GPU_CL_INCOMPLETE && cl->size > 0)
-         needs_return_from_sub_list = true;
-
-   /*
-    * The CLE processor in the simulator tries to read V3D_CL_MAX_INSTR_SIZE
-    * bytes form the CL for each new instruction. If the last instruction in our
-    * CL is smaller than that, and there are not at least V3D_CL_MAX_INSTR_SIZE
-    * bytes until the end of the BO, it will read out of bounds and possibly
-    * cause a GMP violation interrupt to trigger. Ensure we always have at
-    * least that many bytes available to read with the last instruction.
+   /* We need to reserve space for a BRANCH/RETURN_FROM_SUB_LIST packet so we can
+    * always emit these last packet to the BO when needed.
     */
-   space += V3D_CL_MAX_INSTR_SIZE;
+   if (cl->job->type == V3DV_JOB_TYPE_GPU_CL_INCOMPLETE) {
+      needs_return_from_sub_list = true;
+      space += cl_packet_length(RETURN_FROM_SUB_LIST);
+   } else {
+      space += cl_packet_length(BRANCH);
+   }
 
    if (v3dv_cl_offset(cl) + space <= cl->size)
       return;
 
-   if (needs_return_from_sub_list)
+   if (needs_return_from_sub_list && cl->size > 0)
       cl_emit(cl, RETURN_FROM_SUB_LIST, ret);
 
-   cl_alloc_bo(cl, space, !needs_return_from_sub_list);
+   cl_alloc_bo(cl, space, V3D_CLE_READAHEAD, !needs_return_from_sub_list);
 }
