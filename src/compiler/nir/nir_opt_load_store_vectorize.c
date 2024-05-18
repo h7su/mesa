@@ -61,6 +61,11 @@ struct intrinsic_info {
    int value_src;    /* the data it is storing */
 };
 
+enum {
+   var_buffer_amd = 1 << nir_num_variable_modes,
+   num_variable_modes = nir_num_variable_modes + 1,
+};
+
 static const struct intrinsic_info *
 get_info(nir_intrinsic_op op)
 {
@@ -102,6 +107,8 @@ get_info(nir_intrinsic_op op)
       LOAD(nir_var_mem_ssbo, ssbo_uniform_block_intel, 0, 1, -1)
       LOAD(nir_var_mem_shared, shared_uniform_block_intel, -1, 0, -1)
       LOAD(nir_var_mem_global, global_constant_uniform_block_intel, -1, 0, -1)
+      LOAD(var_buffer_amd, buffer_amd, 0, 1, -1)
+      STORE(var_buffer_amd, buffer_amd, 1, 2, -1, 0)
    default:
       break;
 #undef ATOMIC
@@ -152,9 +159,15 @@ struct entry {
 struct vectorize_ctx {
    nir_shader *shader;
    const nir_load_store_vectorize_options *options;
-   struct list_head entries[nir_num_variable_modes];
-   struct hash_table *loads[nir_num_variable_modes];
-   struct hash_table *stores[nir_num_variable_modes];
+   nir_variable_mode modes;
+   struct list_head entries[num_variable_modes];
+   struct hash_table *loads[num_variable_modes];
+   struct hash_table *stores[num_variable_modes];
+
+   /* When true, no actual vectorization is done,
+    * only the alignment information is updated.
+    */
+   bool only_update_alignments;
 };
 
 static uint32_t
@@ -478,7 +491,9 @@ create_entry_key_from_offset(void *mem_ctx, nir_def *base, uint64_t base_mul, ui
 static nir_variable_mode
 get_variable_mode(struct entry *entry)
 {
-   if (entry->info->mode)
+   if (nir_intrinsic_has_memory_modes(entry->intrin) && nir_intrinsic_memory_modes(entry->intrin))
+      return nir_intrinsic_memory_modes(entry->intrin);
+   else if (entry->info->mode)
       return entry->info->mode;
    assert(entry->deref && util_bitcount(entry->deref->modes) == 1);
    return entry->deref->modes;
@@ -1065,8 +1080,8 @@ is_strided_vector(const struct glsl_type *type)
 static bool
 can_vectorize(struct vectorize_ctx *ctx, struct entry *first, struct entry *second)
 {
-   if (!(get_variable_mode(first) & ctx->options->modes) ||
-       !(get_variable_mode(second) & ctx->options->modes))
+   if (!(get_variable_mode(first) & ctx->modes) ||
+       !(get_variable_mode(second) & ctx->modes))
       return false;
 
    if (check_for_aliasing(ctx, first, second))
@@ -1076,6 +1091,9 @@ can_vectorize(struct vectorize_ctx *ctx, struct entry *first, struct entry *seco
     * the same access */
    if (first->info != second->info || first->access != second->access ||
        (first->access & ACCESS_VOLATILE) || first->info->is_atomic)
+      return false;
+
+   if (first->access & ACCESS_USES_FORMAT_AMD)
       return false;
 
    return true;
@@ -1281,12 +1299,14 @@ vectorize_entries(struct vectorize_ctx *ctx, nir_function_impl *impl, struct has
       if (!arr->size)
          continue;
 
-      qsort(util_dynarray_begin(arr),
-            util_dynarray_num_elements(arr, struct entry *),
-            sizeof(struct entry *), &sort_entries);
+      if (!ctx->only_update_alignments) {
+         qsort(util_dynarray_begin(arr),
+               util_dynarray_num_elements(arr, struct entry *),
+               sizeof(struct entry *), &sort_entries);
 
-      while (vectorize_sorted_entries(ctx, impl, arr))
-         progress = true;
+         while (vectorize_sorted_entries(ctx, impl, arr))
+            progress = true;
+      }
 
       util_dynarray_foreach(arr, struct entry *, elem) {
          if (*elem)
@@ -1320,6 +1340,11 @@ handle_barrier(struct vectorize_ctx *ctx, bool *progress, nir_function_impl *imp
       case nir_intrinsic_demote:
          acquire = false;
          modes = nir_var_all;
+         break;
+      case nir_intrinsic_emit_vertex:
+      case nir_intrinsic_emit_vertex_with_counter:
+         release = true;
+         modes = nir_var_shader_out;
          break;
       case nir_intrinsic_barrier:
          if (nir_intrinsic_memory_scope(intrin) == SCOPE_NONE)
@@ -1373,7 +1398,7 @@ process_block(nir_function_impl *impl, struct vectorize_ctx *ctx, nir_block *blo
 {
    bool progress = false;
 
-   for (unsigned i = 0; i < nir_num_variable_modes; i++) {
+   for (unsigned i = 0; i < num_variable_modes; i++) {
       list_inithead(&ctx->entries[i]);
       if (ctx->loads[i])
          _mesa_hash_table_clear(ctx->loads[i], delete_entry_dynarray);
@@ -1393,6 +1418,10 @@ process_block(nir_function_impl *impl, struct vectorize_ctx *ctx, nir_block *blo
          continue;
       nir_intrinsic_instr *intrin = nir_instr_as_intrinsic(instr);
 
+      /* Ignore intrinsics without alignment info when we only want to update the alignment info. */
+      if (ctx->only_update_alignments && !nir_intrinsic_has_align_mul(intrin))
+         continue;
+
       const struct intrinsic_info *info = get_info(intrin->intrinsic);
       if (!info)
          continue;
@@ -1400,7 +1429,9 @@ process_block(nir_function_impl *impl, struct vectorize_ctx *ctx, nir_block *blo
       nir_variable_mode mode = info->mode;
       if (!mode)
          mode = nir_src_as_deref(intrin->src[info->deref_src])->modes;
-      if (!(mode & aliasing_modes(ctx->options->modes)))
+      if (nir_intrinsic_has_memory_modes(intrin) && nir_intrinsic_memory_modes(intrin))
+         mode = nir_intrinsic_memory_modes(intrin);
+      if (!(mode & aliasing_modes(ctx->modes)))
          continue;
       unsigned mode_index = mode_to_index(mode);
 
@@ -1437,7 +1468,7 @@ process_block(nir_function_impl *impl, struct vectorize_ctx *ctx, nir_block *blo
    }
 
    /* sort and combine entries */
-   for (unsigned i = 0; i < nir_num_variable_modes; i++) {
+   for (unsigned i = 0; i < num_variable_modes; i++) {
       progress |= vectorize_entries(ctx, impl, ctx->loads[i]);
       progress |= vectorize_entries(ctx, impl, ctx->stores[i]);
    }
@@ -1445,14 +1476,16 @@ process_block(nir_function_impl *impl, struct vectorize_ctx *ctx, nir_block *blo
    return progress;
 }
 
-bool
-nir_opt_load_store_vectorize(nir_shader *shader, const nir_load_store_vectorize_options *options)
+static bool
+nir_opt_load_store_vectorize_impl(nir_shader *shader, const nir_load_store_vectorize_options *options, bool align_only)
 {
    bool progress = false;
 
    struct vectorize_ctx *ctx = rzalloc(NULL, struct vectorize_ctx);
    ctx->shader = shader;
    ctx->options = options;
+   ctx->modes = options->modes | var_buffer_amd;
+   ctx->only_update_alignments = align_only;
 
    nir_shader_index_vars(shader, options->modes);
 
@@ -1471,4 +1504,21 @@ nir_opt_load_store_vectorize(nir_shader *shader, const nir_load_store_vectorize_
 
    ralloc_free(ctx);
    return progress;
+}
+
+bool
+nir_opt_load_store_vectorize(nir_shader *shader, const nir_load_store_vectorize_options *options)
+{
+   return nir_opt_load_store_vectorize_impl(shader, options, false);
+}
+
+bool
+nir_opt_load_store_update_alignments(nir_shader *shader)
+{
+   const nir_load_store_vectorize_options options = {
+      .modes = nir_var_mem_ssbo | nir_var_mem_ubo | nir_var_mem_push_const |
+               nir_var_mem_shared | nir_var_mem_global | nir_var_shader_temp,
+   };
+
+   return nir_opt_load_store_vectorize_impl(shader, &options, true);
 }
