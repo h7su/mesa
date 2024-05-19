@@ -40,6 +40,7 @@ sys.path.append(os.path.abspath('_exts'))
 # ones.
 extensions = [
     'bootstrap',
+    'depfile',
     'formatting',
     'hawkmoth',
     'nir',
@@ -218,14 +219,15 @@ graphviz_output_format = 'svg'
 
 # -- Options for hawkmoth -------------------------------------------------
 
-hawkmoth_root = os.path.abspath('..')
+hawkmoth_root = os.path.abspath(os.pardir)
+src_root = os.path.join(os.path.dirname(__file__), os.pardir)
 hawkmoth_clang = [
-  '-Idocs/header-stubs/',
-  '-Iinclude/',
-  '-Isrc/',
-  '-Isrc/gallium/include/',
-  '-Isrc/intel/',
-  '-Isrc/mesa/',
+  '-I{}/docs/header-stubs/'.format(src_root),
+  '-I{}/include/'.format(src_root),
+  '-I{}/src/'.format(src_root),
+  '-I{}/src/gallium/include/'.format(src_root),
+  '-I{}/src/intel/'.format(src_root),
+  '-I{}/src/mesa/'.format(src_root),
   '-DHAVE_STRUCT_TIMESPEC',
   '-DHAVE_PTHREAD',
   '-DHAVE_ENDIAN_H',

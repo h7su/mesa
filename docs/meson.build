@@ -1,0 +1,34 @@
+check_hawkmoth = run_command(
+  prog_python, '-c',
+  '''
+from distutils.version import StrictVersion
+import hawkmoth
+assert StrictVersion(hawkmoth.__version__) >= StrictVersion("0.16.0")
+  ''', check: false)
+
+get_option('html-docs').require(
+  check_hawkmoth.returncode() == 0 ,
+  error_message: 'hawkmoth >= 0.16.0 required'
+)
+
+html_docs = custom_target(
+  'mesa-html-docs',
+  depfile: 'docs.d',
+  depend_files: files('conf.py'),
+  command: [sphinx, '-b', 'html', '-q',
+            '-Ddepfile=@DEPFILE@',
+            meson.current_source_dir(), '@OUTPUT@'],
+  output: 'html',
+  build_by_default: get_option('html-docs').enabled(),
+)
+
+html_docs_path = get_option('html-docs-path')
+if html_docs_path == ''
+  html_docs_path = join_paths(get_option('datadir'), 'doc', 'mesa')
+endif
+
+install_subdir(html_docs.full_path(),
+  install_dir: html_docs_path,
+  exclude_files: '.buildinfo',
+  strip_directory: true
+)
