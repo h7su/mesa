@@ -935,9 +935,10 @@ radv_GetPipelineExecutableStatisticsKHR(VkDevice _device, const VkPipelineExecut
       radv_get_shader_from_executable_index(pipeline, pExecutableInfo->executableIndex, &stage);
 
    const struct radv_physical_device *pdev = radv_device_physical(device);
+   const enum amd_gfx_level gfx_level = pdev->info.gfx_level;
 
    unsigned lds_increment =
-      pdev->info.gfx_level >= GFX11 && stage == MESA_SHADER_FRAGMENT ? 1024 : pdev->info.lds_encode_granularity;
+      gfx_level >= GFX11 && stage == MESA_SHADER_FRAGMENT ? 1024 : pdev->info.lds_encode_granularity;
 
    VkPipelineExecutableStatisticKHR *s = pStatistics;
    VkPipelineExecutableStatisticKHR *end = s + (pStatistics ? *pStatisticCount : 0);
@@ -1012,6 +1013,77 @@ radv_GetPipelineExecutableStatisticsKHR(VkDevice _device, const VkPipelineExecut
       desc_copy(s->description, "The maximum number of subgroups in flight on a SIMD unit");
       s->format = VK_PIPELINE_EXECUTABLE_STATISTIC_FORMAT_UINT64_KHR;
       s->value.u64 = shader->max_waves;
+   }
+   ++s;
+
+   if (s < end) {
+      desc_copy(s->name, "Combined inputs");
+      desc_copy(s->description, "Number of input slots reserved for the shader (including merged stages)");
+      s->format = VK_PIPELINE_EXECUTABLE_STATISTIC_FORMAT_UINT64_KHR;
+      s->value.u64 = 0;
+
+      /* VS inputs */
+      if ((gfx_level <= GFX8 && stage == MESA_SHADER_VERTEX) ||
+          (gfx_level >= GFX9 && stage == MESA_SHADER_TESS_CTRL) ||
+          (gfx_level >= GFX9 && stage == MESA_SHADER_GEOMETRY && shader->info.gs.es_type == MESA_SHADER_VERTEX))
+         s->value.u64 += util_bitcount(shader->info.vs.input_slot_usage_mask);
+
+      /* TCS inputs */
+      if (stage == MESA_SHADER_TESS_CTRL)
+         s->value.u64 += shader->info.tcs.num_linked_inputs;
+
+      /* TES inputs */
+      if ((gfx_level <= GFX8 && stage == MESA_SHADER_TESS_EVAL) ||
+          (gfx_level >= GFX9 && stage == MESA_SHADER_GEOMETRY && shader->info.gs.es_type == MESA_SHADER_TESS_EVAL))
+         s->value.u64 += shader->info.tes.num_linked_inputs + shader->info.tes.num_linked_patch_inputs;
+
+      /* GS inputs */
+      if (stage == MESA_SHADER_GEOMETRY)
+         s->value.u64 += shader->info.gs.num_linked_inputs;
+
+      /* FS inputs */
+      if (stage == MESA_SHADER_FRAGMENT)
+         s->value.u64 += shader->info.ps.num_interp + shader->info.ps.num_prim_interp;
+   }
+   ++s;
+
+   if (s < end) {
+      desc_copy(s->name, "Combined outputs");
+      desc_copy(s->description, "Number of output slots reserved for the shader (including merged stages)");
+      s->format = VK_PIPELINE_EXECUTABLE_STATISTIC_FORMAT_UINT64_KHR;
+      s->value.u64 = 0;
+
+      /* VS -> TCS, VS -> GS outputs */
+      if ((gfx_level <= GFX8 && stage == MESA_SHADER_VERTEX && (shader->info.vs.as_ls || shader->info.vs.as_es)) ||
+          (gfx_level >= GFX9 && stage == MESA_SHADER_TESS_CTRL) ||
+          (gfx_level >= GFX9 && stage == MESA_SHADER_GEOMETRY && shader->info.gs.es_type == MESA_SHADER_VERTEX))
+         s->value.u64 += shader->info.vs.num_linked_outputs;
+
+      /* TCS -> TES outputs */
+      if (stage == MESA_SHADER_TESS_CTRL)
+         s->value.u64 += shader->info.tcs.num_linked_outputs + shader->info.tcs.num_linked_patch_outputs;
+
+      /* TES -> GS outputs */
+      if ((gfx_level <= GFX8 && stage == MESA_SHADER_TESS_EVAL && shader->info.vs.as_es) ||
+          (gfx_level >= GFX9 && stage == MESA_SHADER_GEOMETRY && shader->info.gs.es_type == MESA_SHADER_TESS_EVAL))
+         s->value.u64 += shader->info.tes.num_linked_outputs;
+
+      /* legacy GS -> copy shader outputs */
+      if (!shader->info.is_ngg && stage == MESA_SHADER_GEOMETRY)
+         s->value.u64 += shader->info.gs.gsvs_vertex_size / 16;
+
+      /* VS -> FS, TES -> FS, NGG GS -> FS, MS -> FS outputs */
+      if ((stage == MESA_SHADER_VERTEX && !shader->info.vs.as_ls && !shader->info.vs.as_es) ||
+          (stage == MESA_SHADER_TESS_EVAL && !shader->info.tes.as_es) ||
+          shader->info.is_ngg)
+         s->value.u64 += shader->info.outinfo.pos_exports + shader->info.outinfo.param_exports +
+                         shader->info.outinfo.prim_param_exports;
+
+      /* FS outputs */
+      if (stage == MESA_SHADER_FRAGMENT)
+         s->value.u64 += shader->info.ps.colors_written + !!shader->info.ps.writes_z +
+                         !!shader->info.ps.writes_stencil + !!shader->info.ps.writes_sample_mask +
+                         !!shader->info.ps.writes_mrt0_alpha;
    }
    ++s;
 
